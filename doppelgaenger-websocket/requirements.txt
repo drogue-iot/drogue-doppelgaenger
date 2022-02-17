@@ -1,0 +1,6 @@
+motor
+tornado
+dnspython
+logzero
+python-dotenv
+bson

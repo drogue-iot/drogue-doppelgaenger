@@ -1,0 +1,55 @@
+version: "3.7"
+
+volumes:
+  mongodb_data:
+
+services:
+  mongodb:
+    image: docker.io/library/mongo:5
+    restart: always
+    entrypoint:
+      - bash
+      - -c
+      - |
+        chmod 400 /data/replica.key
+        chown mongodb:mongodb /data/replica.key
+        ls -la /data
+        exec docker-entrypoint.sh $$@
+    command: "mongod --replSet rs0 --bind_ip_all --keyFile /data/replica.key"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin1234
+      MONGO_INITDB_DATABASE: twin-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./init-db.js:/docker-entrypoint-initdb.d/init-db.js:ro,z
+      - ./replica.key:/data/replica.key:z
+      - mongodb_data:/data/db
+
+  mongodb-init:
+    image: docker.io/library/mongo:5
+    restart: always
+    entrypoint:
+      - bash
+      - -c
+      - |
+        sleep 20
+        exec bash ./init-rs.sh
+    depends_on:
+      - mongodb
+    volumes:
+      - ./init-rs.sh:/init-rs.sh:ro,z
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin1234
+
+  mongodb-express:
+    image: docker.io/library/mongo-express:0.54
+    restart: always
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: admin1234
+      ME_CONFIG_MONGODB_SERVER: mongodb
+    ports:
+      - "8081:8081"
