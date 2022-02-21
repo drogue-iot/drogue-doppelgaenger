@@ -128,7 +128,7 @@ impl Processor {
     }
 
     async fn process(&self, event: TwinEvent) -> Result<(), TwinEventError> {
-        log::info!("Processing twin event: {event:?}");
+        log::debug!("Processing twin event: {event:?}");
 
         let collection = self.db.collection::<ThingState>(&event.application);
 
@@ -157,7 +157,7 @@ impl Processor {
             "$set": update,
         };
 
-        log::info!("Request update: {:#?}", update);
+        log::debug!("Request update: {:#?}", update);
 
         collection
             .update_one(
@@ -219,7 +219,7 @@ impl TryFrom<Event> for TwinEvent {
     type Error = TwinEventError;
 
     fn try_from(event: Event) -> Result<Self, Self::Error> {
-        let (application, device, payload) = match (
+        let (application, device, mut payload) = match (
             event.extension("application").cloned(),
             event.extension("device").cloned(),
             payload(event),
@@ -229,7 +229,7 @@ impl TryFrom<Event> for TwinEvent {
                 Some(ExtensionValue::String(device)),
                 Some(payload),
             ) => {
-                log::trace!("Payload: {:#?}", payload);
+                log::debug!("Payload: {:#?}", payload);
                 (application, device, payload)
             }
             _ => {
@@ -237,7 +237,7 @@ impl TryFrom<Event> for TwinEvent {
             }
         };
 
-        let features: Map<String, Value> = serde_json::from_value(payload)
+        let features: Map<String, Value> = serde_json::from_value(payload["features"].take())
             .map_err(|err| TwinEventError::Conversion(format!("Failed to convert: {err}")))?;
 
         Ok(TwinEvent {
