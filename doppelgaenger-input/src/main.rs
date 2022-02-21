@@ -150,9 +150,10 @@ async fn main() -> anyhow::Result<()> {
     dotenv::dotenv()?;
     env_logger::init();
 
-    let config: ApplicationConfig = Config::new()
-        .with_merged(Environment::new().separator("__"))?
-        .try_into()?;
+    let config: ApplicationConfig = Config::builder()
+        .add_source(Environment::default().separator("__"))
+        .build()?
+        .try_deserialize()?;
 
     log::info!("Configuration: {:#?}", config);
 
