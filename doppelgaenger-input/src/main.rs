@@ -74,7 +74,7 @@ impl Processor {
 
         let client = {
             let options = ClientOptions::parse(&config.mongodb.url).await?;
-            log::info!("MongoDB Config: {:?}", options);
+            log::info!("MongoDB Config: {:#?}", options);
             Client::with_options(options)?
         };
 
