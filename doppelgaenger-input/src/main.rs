@@ -12,7 +12,7 @@ use rdkafka::config::FromClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::util::DefaultRuntime;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -119,16 +119,19 @@ impl Processor {
 
         let collection = self.db.collection::<ThingState>(&event.application);
 
-        let feature = format!("features.{}", event.feature);
-        let properties: Bson = Bson::try_from(event.properties)?;
+        // let features: Bson = Bson::try_from(event.features)?;
+
+        //let features = bson::Document::try_from(event.features)?;
+        let features: Bson = event
+            .features
+            .try_into()
+            .map_err(|err| TwinEventError::Conversion(format!("Failed to convert: {err}")))?;
 
         let update = doc! {
             "$inc": {
                 "revision": 1,
             },
-            "$set": {
-                feature: properties,
-            }
+            "$set": features,
         };
 
         collection
@@ -174,8 +177,7 @@ async fn main() -> anyhow::Result<()> {
 struct TwinEvent {
     pub application: String,
     pub device: String,
-    pub feature: String,
-    pub properties: Value,
+    pub features: Map<String, Value>,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -192,7 +194,7 @@ impl TryFrom<Event> for TwinEvent {
     type Error = TwinEventError;
 
     fn try_from(event: Event) -> Result<Self, Self::Error> {
-        let (application, device, mut payload) = match (
+        let (application, device, payload) = match (
             event.extension("application").cloned(),
             event.extension("device").cloned(),
             payload(event),
@@ -210,17 +212,13 @@ impl TryFrom<Event> for TwinEvent {
             }
         };
 
-        let feature = if let Value::String(feature) = payload["feature"].take() {
-            feature
-        } else {
-            return Err(TwinEventError::Conversion("Missing 'feature' field".into()));
-        };
+        let features: Map<String, Value> = serde_json::from_value(payload)
+            .map_err(|err| TwinEventError::Conversion(format!("Failed to convert: {err}")))?;
 
         Ok(TwinEvent {
             application,
             device,
-            feature,
-            properties: payload["properties"].take(),
+            features,
         })
     }
 }
