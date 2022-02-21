@@ -138,6 +138,15 @@ impl Processor {
             update.insert(format!("features.{k}.properties"), v);
         }
 
+        if update.is_empty() {
+            return Ok(());
+        }
+
+        update.insert(
+            "lastUpdateTimestamp".to_string(),
+            Bson::String("$currentDate".to_string()),
+        );
+
         let update = doc! {
             "$setOnInsert": {
                 "creationTimestamp": "$currentDate"
@@ -146,9 +155,6 @@ impl Processor {
                 "revision": 1,
             },
             "$set": update,
-            "$set": {
-                "lastUpdateTimestamp": "$currentDate"
-            }
         };
 
         log::info!("Request update: {:#?}", update);
