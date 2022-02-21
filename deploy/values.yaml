@@ -1,0 +1,18 @@
+architecture: "replicaset"
+auth:
+  rootUser: admin
+  usernames:
+    - twin
+  databases:
+    - twin-db
+
+podSecurityContext:
+  enabled: false
+containerSecurityContext:
+  enabled: false
+
+arbiter:
+  podSecurityContext:
+    enabled: false
+  containerSecurityContext:
+    enabled: false

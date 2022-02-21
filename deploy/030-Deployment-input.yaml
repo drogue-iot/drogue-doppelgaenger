@@ -1,0 +1,61 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: doppelgaenger-input
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"doppelgaenger-input:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'
+  labels:
+    app.kubernetes.io/name: doppelgaenger-input
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: doppelgaenger-input
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: doppelgaenger-input
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: app
+          image: doppelgaenger-input
+          imagePullPolicy: Always
+          env:
+            - name: RUST_LOG
+              value: info
+            - name: KAFKA__BOOTSTRAP_SERVERS
+#              value: drogue-iot-kafka-bootstrap-drogue-dev.apps.wonderful.iot-playground.org:443
+              value: drogue-iot-kafka-bootstrap.drogue-dev.svc:9092
+            - name: KAFKA__PROPERTIES__SECURITY_PROTOCOL
+              value: SASL_PLAINTEXT
+            - name: KAFKA__PROPERTIES__SASL_MECHANISM
+              value: SCRAM-SHA-512
+            - name: KAFKA__PROPERTIES__SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: doppelgaegner-config
+                  key: kafka.username
+            - name: KAFKA__PROPERTIES__SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: doppelgaegner-config
+                  key: kafka.password
+            - name: KAFKA__TOPIC
+              value: events-burrboard
+            - name: KAFKA__PROPERTIES__GROUP_ID
+              value: drogue-twin
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: twindb-mongodb
+                  key: mongodb-passwords
+            - name: MONGODB__URL
+              value: mongodb://twin:$(PASSWORD)@twindb-mongodb-headless:27017/twin-db
+            - name: MONGODB__DATABASE
+              value: twin-db

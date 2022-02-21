@@ -1,0 +1,12 @@
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: doppelgaenger-input
+spec: {}
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: doppelgaenger-websocket
+spec: {}

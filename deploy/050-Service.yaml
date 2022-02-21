@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: doppelgaenger-websocket
+spec:
+  type: ClusterIP
+  ports:
+    - name: web
+      port: 8082
+      targetPort: web
+  selector:
+    app.kubernetes.io/name: doppelgaenger-websocket
