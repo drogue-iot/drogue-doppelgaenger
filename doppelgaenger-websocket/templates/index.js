@@ -52,12 +52,12 @@ function updateDevice(update) {
 
     const content = $(`<dl></dl>`);
     for (const feature of Object.keys(state.features).sort()) {
-        const properties = state.features[feature]
-        content.append($(`<dt>${feature}</dt><dd><code>${JSON.stringify(properties, null, 2)}</code></dd>`))
+        const properties = state.features[feature].properties;
+        content.append($(`<dt>${feature}</dt><dd><code>${JSON.stringify(properties, null, 2)}</code></dd>`));
     }
 
     // update
-    card.find(".card-text").empty().append(content)
+    card.find(".card-text").empty().append(content);
     card.addClass("updated");
     setTimeout(() => {
         card.removeClass("updated");

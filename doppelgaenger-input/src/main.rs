@@ -1,16 +1,21 @@
-use bson::Bson;
-use cloudevents::binding::rdkafka::MessageExt;
-use cloudevents::event::ExtensionValue;
-use cloudevents::{AttributesReader, Data, Event};
+use bson::{Bson, Document};
+use cloudevents::{
+    binding::rdkafka::MessageExt, event::ExtensionValue, AttributesReader, Data, Event,
+};
 use config::{Config, Environment};
 use futures_util::stream::StreamExt;
 use indexmap::IndexMap;
-use mongodb::bson::doc;
-use mongodb::options::{ClientOptions, UpdateOptions};
-use mongodb::{Client, Database};
-use rdkafka::config::FromClientConfig;
-use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::util::DefaultRuntime;
+use mongodb::{
+    bson::doc,
+    options::{ClientOptions, UpdateOptions},
+    Client, Database,
+};
+use rdkafka::consumer::CommitMode;
+use rdkafka::{
+    config::FromClientConfig,
+    consumer::{Consumer, StreamConsumer},
+    util::DefaultRuntime,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -91,14 +96,22 @@ impl Processor {
         loop {
             match stream.next().await.map(|r| {
                 r.map_err::<anyhow::Error, _>(|err| err.into())
-                    .and_then(|msg| msg.to_event().map_err(|err| err.into()))
+                    .and_then(|msg| {
+                        msg.to_event()
+                            .map_err(|err| err.into())
+                            .map(|evt| (msg, evt))
+                    })
             }) {
                 None => break,
-                Some(Ok(event)) => {
-                    if let Err(err) = self.handle(event).await {
+                Some(Ok(msg)) => {
+                    if let Err(err) = self.handle(msg.1).await {
                         log::info!("Failed to handle event: {}", err);
+                        break;
+                    } else if let Err(err) = self.consumer.commit_message(&msg.0, CommitMode::Async)
+                    {
+                        log::info!("Failed to ack: {err}");
+                        break;
                     }
-                    // need to think about ACKing events
                 }
                 Some(Err(err)) => {
                     log::warn!("Failed to receive from Kafka: {err}");
@@ -119,20 +132,26 @@ impl Processor {
 
         let collection = self.db.collection::<ThingState>(&event.application);
 
-        // let features: Bson = Bson::try_from(event.features)?;
-
-        //let features = bson::Document::try_from(event.features)?;
-        let features: Bson = event
-            .features
-            .try_into()
-            .map_err(|err| TwinEventError::Conversion(format!("Failed to convert: {err}")))?;
+        let mut update = Document::new();
+        for (k, v) in event.features {
+            let v: Bson = v.try_into()?;
+            update.insert(format!("features.{k}.properties"), v);
+        }
 
         let update = doc! {
+            "$setOnInsert": {
+                "creationTimestamp": "$currentDate"
+            },
             "$inc": {
                 "revision": 1,
             },
-            "$set": features,
+            "$set": update,
+            "$set": {
+                "lastUpdateTimestamp": "$currentDate"
+            }
         };
+
+        log::info!("Request update: {:#?}", update);
 
         collection
             .update_one(

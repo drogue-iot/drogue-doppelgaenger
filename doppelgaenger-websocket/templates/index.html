@@ -86,7 +86,7 @@
         setState("Connecting");
 
         let address = location.origin.replace(/^http/, 'ws') + '/socket';
-        if (socketOverride !== undefined) {
+        if (typeof socketOverride !== 'undefined') {
             address = socketOverride;
         }
         const websocket = new WebSocket(address);
