@@ -147,7 +147,7 @@ impl Processor {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenv::dotenv()?;
+    dotenv::dotenv().ok();
     env_logger::init();
 
     let config: ApplicationConfig = Config::builder()
