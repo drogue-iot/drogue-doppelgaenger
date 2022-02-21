@@ -9,6 +9,9 @@ from motor import MotorClient
 from dotenv import load_dotenv
 from logzero import logger
 from bson import json_util
+from healthcheck import TornadoHandler, HealthCheck
+
+health = HealthCheck()
 
 
 class ChangesHandler(tornado.websocket.WebSocketHandler):
@@ -75,6 +78,10 @@ def main():
     app = tornado.web.Application(
         [
             (r"/socket", ChangesHandler),
+            (
+                "/health",
+                TornadoHandler, dict(checker=health)
+            ),
             (
                 r"/(.*)", tornado.web.StaticFileHandler,
                 {"path": "templates/", "default_filename": "index.html"}

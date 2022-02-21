@@ -4,3 +4,4 @@ dnspython
 logzero
 python-dotenv
 bson
+py-healthcheck
