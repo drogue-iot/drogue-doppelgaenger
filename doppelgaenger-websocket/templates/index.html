@@ -25,6 +25,9 @@
             }
         }
 
+        #last-message-container {
+            display: none;
+        }
     </style>
 </head>
 
@@ -38,11 +41,15 @@
     <div class="row pb-2">
         <div class="col">
             <div class="card">
-                <div class="card-body">
-                    <p class="card-text">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item">
+                        <strong>State:</strong> <span id="state">?</span>
+                        <span class="float-end"><a href="https://device-simulator-burrboard.apps.wonderful.iot-playground.org/" target="_blank">Open Simulator</a> </span>
+                    </li>
+                    <li  class="list-group-item" id="last-message-container">
                         <code id="last-message"></code>
-                    </p>
-                </div>
+                    </li>
+                </ul>
             </div>
         </div>
     </div>
@@ -60,21 +67,47 @@
 <script src="index.js"></script>
 
 <script>
+    const showLastMessage = false;
+    const socketOverride = "wss://dashboard-burrboard.apps.wonderful.iot-playground.org/socket";
+
+    if(showLastMessage) {
+        $("#last-message-container").show();
+    }
+
+    function setState(state, err) {
+        let msg = state;
+        if (err !== undefined) {
+            msg += ` (${err})`;
+        }
+        $("#state").text(msg);
+    }
+
     function connect() {
-        const websocket = new WebSocket(location.origin.replace(/^http/, 'ws') + '/socket')
+        setState("Connecting");
+
+        let address = location.origin.replace(/^http/, 'ws') + '/socket';
+        if (socketOverride !== undefined) {
+            address = socketOverride;
+        }
+        const websocket = new WebSocket(address);
+        websocket.onopen = () => {
+            setState("Connected");
+        };
         websocket.onmessage = (evt) => {
             $("#last-message").text(evt.data);
             updateDevice(JSON.parse(evt.data));
-        }
+        };
         websocket.onclose = (e) => {
+            setState("Connection lost");
             setTimeout(() => {
                 connect();
             }, 1000);
-        }
+        };
         websocket.onerror = (e) => {
+            setState("Error", e)
             console.error("WebSocket failed: ", e);
             websocket.close();
-        }
+        };
     }
     connect();
 </script>
