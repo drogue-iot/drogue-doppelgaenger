@@ -61,7 +61,7 @@
 
 <script>
     function connect() {
-        const websocket = new WebSocket('ws://127.0.0.1:8082/socket')
+        const websocket = new WebSocket(location.origin.replace(/^http/, 'ws') + '/socket')
         websocket.onmessage = (evt) => {
             $("#last-message").text(evt.data);
             updateDevice(JSON.parse(evt.data));
