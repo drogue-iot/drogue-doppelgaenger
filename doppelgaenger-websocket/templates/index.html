@@ -44,7 +44,9 @@
                 <ul class="list-group list-group-flush">
                     <li class="list-group-item">
                         <strong>State:</strong> <span id="state">?</span>
-                        <span class="float-end"><a href="https://device-simulator-burrboard.apps.wonderful.iot-playground.org/" target="_blank">Open Simulator</a> </span>
+                        {% if simulator_url != "" %}
+                        <span class="float-end"><a href="{{ simulator_url }}" target="_blank">Open Simulator</a> </span>
+                        {% end %}
                     </li>
                     <li  class="list-group-item" id="last-message-container">
                         <code id="last-message"></code>

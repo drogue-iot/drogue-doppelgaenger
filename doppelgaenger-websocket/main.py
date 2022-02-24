@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any
+import signal
 import tornado.websocket
 import tornado.httpserver
 import tornado.ioloop
@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from logzero import logger
 from bson import json_util
 from healthcheck import TornadoHandler, HealthCheck
+import time
+
 
 health = HealthCheck()
 
@@ -66,6 +68,36 @@ async def watch(collection):
             ChangesHandler.on_change(change)
 
 
+class HomeHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.render("templates/index.html", simulator_url=os.getenv("SIMULATOR_URL", ""))
+
+
+def sig_handler(sig, frame):
+    logger.warning('Caught signal: %s', sig)
+    tornado.ioloop.IOLoop.instance().add_callback(shutdown)
+
+MAX_WAIT_SECONDS_BEFORE_SHUTDOWN = 3
+
+def shutdown():
+    logger.info('Stopping http server')
+    server.stop()
+
+    logger.info('Will shutdown in %s seconds ...', MAX_WAIT_SECONDS_BEFORE_SHUTDOWN)
+    io_loop = tornado.ioloop.IOLoop.instance()
+
+    deadline = time.time() + MAX_WAIT_SECONDS_BEFORE_SHUTDOWN
+
+    def stop_loop():
+        now = time.time()
+        if now < deadline and (io_loop._callbacks or io_loop._timeouts):
+            io_loop.add_timeout(now + 1, stop_loop)
+        else:
+            io_loop.stop()
+            logging.info('Shutdown')
+    stop_loop()
+
+
 def main():
     load_dotenv()
 
@@ -75,12 +107,17 @@ def main():
     client = MotorClient(os.environ["MONGODB__URL"])
     collection = client[database][application]
 
+    global app
+
     app = tornado.web.Application(
         [
             (r"/socket", ChangesHandler),
             (
                 "/health",
                 TornadoHandler, dict(checker=health)
+            ),
+            (
+                r"/", HomeHandler
             ),
             (
                 r"/(.*)", tornado.web.StaticFileHandler,
@@ -92,6 +129,9 @@ def main():
 
     app.listen(8082)
 
+    signal.signal(signal.SIGTERM, sig_handler)
+    signal.signal(signal.SIGINT, sig_handler)
+
     loop = tornado.ioloop.IOLoop.current()
     loop.add_callback(watch, collection)
 
@@ -102,6 +142,8 @@ def main():
     finally:
         if change_stream is not None:
             change_stream.close()
+
+    logger.wan("Exiting...")
 
 
 if __name__ == "__main__":
