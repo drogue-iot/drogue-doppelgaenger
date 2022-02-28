@@ -10,10 +10,9 @@ use mongodb::{
     options::{ClientOptions, UpdateOptions},
     Client, Database,
 };
-use rdkafka::consumer::CommitMode;
 use rdkafka::{
     config::FromClientConfig,
-    consumer::{Consumer, StreamConsumer},
+    consumer::{CommitMode, Consumer, StreamConsumer},
     util::DefaultRuntime,
 };
 use serde::{Deserialize, Serialize};
@@ -103,16 +102,24 @@ impl Processor {
                     })
             }) {
                 None => break,
-                Some(Ok(msg)) => {
-                    if let Err(err) = self.handle(msg.1).await {
+                Some(Ok(msg)) => match self.handle(msg.1).await {
+                    Ok(_) => {
+                        if let Err(err) = self.consumer.commit_message(&msg.0, CommitMode::Async) {
+                            log::info!("Failed to ack: {err}");
+                            break;
+                        }
+                    }
+                    Err(err) if !err.is_temporary() => {
+                        if let Err(err) = self.consumer.commit_message(&msg.0, CommitMode::Async) {
+                            log::info!("Failed to ack: {err}");
+                            break;
+                        }
+                    }
+                    Err(err) => {
                         log::info!("Failed to handle event: {}", err);
                         break;
-                    } else if let Err(err) = self.consumer.commit_message(&msg.0, CommitMode::Async)
-                    {
-                        log::info!("Failed to ack: {err}");
-                        break;
                     }
-                }
+                },
                 Some(Err(err)) => {
                     log::warn!("Failed to receive from Kafka: {err}");
                     break;
@@ -213,6 +220,16 @@ pub enum TwinEventError {
     Persistence(#[from] mongodb::error::Error),
     #[error("Value error: {0}")]
     Value(#[from] bson::extjson::de::Error),
+}
+
+impl TwinEventError {
+    pub fn is_temporary(&self) -> bool {
+        match self {
+            // Assume all MongoDB errors to be temporary. Might need some refinement.
+            Self::Persistence(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl TryFrom<Event> for TwinEvent {
