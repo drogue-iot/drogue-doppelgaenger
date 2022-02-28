@@ -1,15 +1,18 @@
 use crate::ApplicationConfig;
 use bson::{Bson, Document};
+use chrono::{Duration, Utc};
 use cloudevents::{
     binding::rdkafka::MessageExt, event::ExtensionValue, AttributesReader, Data, Event,
 };
 use futures_util::stream::StreamExt;
 use indexmap::IndexMap;
+use lazy_static::lazy_static;
 use mongodb::{
     bson::doc,
     options::{ClientOptions, UpdateOptions},
     Client, Database,
 };
+use prometheus::{Histogram, HistogramOpts};
 use rdkafka::{
     config::FromClientConfig,
     consumer::{CommitMode, Consumer, StreamConsumer},
@@ -17,6 +20,14 @@ use rdkafka::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+
+lazy_static! {
+    pub static ref DELTA_T: Histogram = Histogram::with_opts(HistogramOpts::new(
+        "event_delta",
+        "Time difference (in seconds) between ingress and processing"
+    ))
+    .unwrap();
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Feature {
@@ -109,6 +120,11 @@ impl Processor {
     }
 
     async fn handle(&self, event: Event) -> Result<(), TwinEventError> {
+        if let Some(time) = event.time() {
+            let diff = Utc::now() - *time;
+            DELTA_T.observe((diff.num_milliseconds() as f64) / 1000.0);
+        }
+
         self.process(TwinEvent::try_from(event)?).await?;
 
         Ok(())

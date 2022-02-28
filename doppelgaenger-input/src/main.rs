@@ -87,11 +87,13 @@ async fn main() -> anyhow::Result<()> {
 
     // run
 
-    let registry = prometheus::default_registry().clone();
+    prometheus::default_registry()
+        .register(Box::new(processor::DELTA_T.clone()))
+        .unwrap();
 
     select! {
         _ = app.run() => {},
-        _ = start_metrics(metrics, registry) => {},
+        _ = start_metrics(metrics, prometheus::default_registry().clone()) => {},
     }
 
     // done
