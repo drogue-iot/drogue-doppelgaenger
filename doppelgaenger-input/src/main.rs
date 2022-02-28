@@ -110,6 +110,7 @@ impl Processor {
                         }
                     }
                     Err(err) if !err.is_temporary() => {
+                        log::info!("Dropping event with permanent error: {}", err);
                         if let Err(err) = self.consumer.commit_message(&msg.0, CommitMode::Async) {
                             log::info!("Failed to ack: {err}");
                             break;
