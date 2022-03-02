@@ -39,12 +39,12 @@ spec:
             - name: KAFKA__PROPERTIES__SASL_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: doppelgaegner-config
+                  name: doppelgaenger-config
                   key: kafka.username
             - name: KAFKA__PROPERTIES__SASL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: doppelgaegner-config
+                  name: doppelgaenger-config
                   key: kafka.password
             - name: KAFKA__TOPIC
               value: events-burrboard

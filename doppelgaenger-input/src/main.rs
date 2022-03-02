@@ -14,12 +14,11 @@ use tokio::select;
 pub struct ApplicationConfig {
     pub kafka: KafkaClient,
     pub mongodb: MongoDbClient,
-
     #[serde(default)]
     pub metrics: MetricsConfig,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Default)]
 pub struct MetricsConfig {
     #[serde(default)]
     pub bind_addr: Option<String>,
