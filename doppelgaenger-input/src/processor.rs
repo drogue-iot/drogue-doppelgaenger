@@ -1,6 +1,6 @@
 use crate::ApplicationConfig;
 use bson::{Bson, Document};
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use cloudevents::{
     binding::rdkafka::MessageExt, event::ExtensionValue, AttributesReader, Data, Event,
 };
