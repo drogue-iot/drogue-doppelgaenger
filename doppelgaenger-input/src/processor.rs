@@ -145,14 +145,12 @@ impl Processor {
             return Ok(());
         }
 
-        update.insert(
-            "lastUpdateTimestamp".to_string(),
-            Bson::String("$currentDate".to_string()),
-        );
-
         let update = doc! {
+            "$currentDate": {
+                "lastUpdateTimestamp": { "$type": "timestamp" },
+            },
             "$setOnInsert": {
-                "creationTimestamp": "$currentDate"
+                "creationTimestamp": "$$NOW"
             },
             "$inc": {
                 "revision": 1,
