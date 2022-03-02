@@ -15,10 +15,11 @@ pub struct ApplicationConfig {
     pub kafka: KafkaClient,
     pub mongodb: MongoDbClient,
 
+    #[serde(default)]
     pub metrics: MetricsConfig,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct MetricsConfig {
     #[serde(default)]
     pub bind_addr: Option<String>,
