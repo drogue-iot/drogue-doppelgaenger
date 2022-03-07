@@ -47,11 +47,11 @@ impl Metrics {
         if let (Some(a), Some(b), Some(light), Some(temp)) = (button_a, button_b, light, temp) {
             let a = a
                 .get("presses")
-                .map(|v| v.as_i64().unwrap_or_default())
+                .map(|v| v.as_u64().unwrap_or_default())
                 .unwrap();
             let b = b
                 .get("presses")
-                .map(|v| v.as_i64().unwrap_or_default())
+                .map(|v| v.as_u64().unwrap_or_default())
                 .unwrap();
             let light = light
                 .get("value")
@@ -73,6 +73,8 @@ impl Metrics {
             // this is the first time we receive a message from the device.
             else {
                 self.devices.insert(device.clone(), Buttons::new(a, b));
+                BUTTON_A_PRESSES.inc_by(a);
+                BUTTON_B_PRESSES.inc_by(b);
                 DEVICES_SEEN.inc();
             }
         }
@@ -80,24 +82,24 @@ impl Metrics {
 }
 
 pub struct Buttons {
-    button_a_total: i64,
-    button_b_total: i64,
+    button_a_total: u64,
+    button_b_total: u64,
 }
 
 impl Buttons {
-    fn new(a: i64, b: i64) -> Self {
+    fn new(a: u64, b: u64) -> Self {
         Buttons {
             button_a_total: a,
             button_b_total: b,
         }
     }
 
-    fn update(&mut self, a: i64, b: i64) {
-        let new_a_presses = a - self.button_a_total;
-        let new_b_presses = b - self.button_b_total;
+    fn update(&mut self, a: u64, b: u64) {
+        let new_a_presses = a.checked_sub(self.button_a_total).unwrap_or_default();
+        let new_b_presses = b.checked_sub(self.button_b_total).unwrap_or_default();
 
-        BUTTON_A_PRESSES.inc_by(new_a_presses as u64);
-        BUTTON_B_PRESSES.inc_by(new_b_presses as u64);
+        BUTTON_A_PRESSES.inc_by(new_a_presses);
+        BUTTON_B_PRESSES.inc_by(new_b_presses);
 
         self.button_a_total = b;
         self.button_b_total = b;
