@@ -42,7 +42,7 @@ kubectl expose service grafana --type=NodePort --target-port=3000 --name=grafana
 minikube service grafana-server --url
 ```
 Add the prometheus server as a source in grafana : `http://prometheus-server:80`
-
+Import the `grafana-dashboard.json` in the grafana UI to see the dashboard. 
 
 ## links 
 https://opensource.com/article/19/11/introduction-monitoring-prometheus
