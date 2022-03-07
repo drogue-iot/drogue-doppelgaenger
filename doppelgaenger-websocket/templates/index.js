@@ -1,9 +1,14 @@
+
+function encodeDevice(device) {
+    return device.replaceAll(/[^a-zA-Z0-9]/g, "-")
+}
+
 function updateDevice(update) {
     //console.log(update)
 
     const device = update.document.device;
     const state = update.document;
-    const cardId = "device-card-" + device;
+    const cardId = "device-card-" + encodeDevice(device);
 
     let card = $("#" + cardId);
 
@@ -28,7 +33,6 @@ function updateDevice(update) {
         const cards = $("#devices");
         let best = null;
         cards.children().each((idx, element) => {
-            console.log(element)
             const currentDevice = $(element).attr("data-device");
 
             if (!currentDevice) {
