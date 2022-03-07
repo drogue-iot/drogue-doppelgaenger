@@ -18,6 +18,10 @@ spec:
     type: RollingUpdate
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"    # must be quoted
+        prometheus.io/port: "8081"      # must be quoted
+        prometheus.io/path: "/metrics"  # it defaults to /metrics
       labels:
         app.kubernetes.io/name: doppelgaenger-input
     spec:
@@ -29,11 +33,13 @@ spec:
           env:
             - name: RUST_LOG
               value: info
+            - name: METRICS__BIND_ADDR
+              value: 0.0.0.0:8081
             - name: KAFKA__BOOTSTRAP_SERVERS
 #              value: drogue-iot-kafka-bootstrap-drogue-dev.apps.wonderful.iot-playground.org:443
               value: drogue-iot-kafka-bootstrap.drogue-dev.svc:9092
             - name: KAFKA__PROPERTIES__SECURITY_PROTOCOL
-              value: SASL_PLAINTEXT
+              value: SASL_SSL
             - name: KAFKA__PROPERTIES__SASL_MECHANISM
               value: SCRAM-SHA-512
             - name: KAFKA__PROPERTIES__SASL_USERNAME
@@ -59,3 +65,6 @@ spec:
               value: mongodb://twin:$(PASSWORD)@twindb-mongodb-headless:27017/twin-db
             - name: MONGODB__DATABASE
               value: twin-db
+          ports:
+            - containerPort: 8081
+              name: metrics

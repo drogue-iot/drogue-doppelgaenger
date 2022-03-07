@@ -1,3 +1,5 @@
+use crate::metrics;
+use crate::metrics::Metrics;
 use crate::ApplicationConfig;
 use bson::{Bson, Document};
 use chrono::Utc;
@@ -6,13 +8,11 @@ use cloudevents::{
 };
 use futures_util::stream::StreamExt;
 use indexmap::IndexMap;
-use lazy_static::lazy_static;
 use mongodb::{
     bson::doc,
     options::{ClientOptions, UpdateOptions},
     Client, Database,
 };
-use prometheus::{Histogram, HistogramOpts};
 use rdkafka::{
     config::FromClientConfig,
     consumer::{CommitMode, Consumer, StreamConsumer},
@@ -20,14 +20,6 @@ use rdkafka::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-
-lazy_static! {
-    pub static ref DELTA_T: Histogram = Histogram::with_opts(HistogramOpts::new(
-        "event_delta",
-        "Time difference (in seconds) between ingress and processing"
-    ))
-    .unwrap();
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Feature {
@@ -77,7 +69,7 @@ impl Processor {
         Ok(Self { consumer, db })
     }
 
-    pub async fn run(self) {
+    pub async fn run(self, dashboard_data: &mut Metrics) {
         let mut stream = self.consumer.stream();
 
         log::info!("Running stream...");
@@ -92,7 +84,7 @@ impl Processor {
                     })
             }) {
                 None => break,
-                Some(Ok(msg)) => match self.handle(msg.1).await {
+                Some(Ok(msg)) => match self.handle(msg.1, dashboard_data).await {
                     Ok(_) => {
                         if let Err(err) = self.consumer.commit_message(&msg.0, CommitMode::Async) {
                             log::info!("Failed to ack: {err}");
@@ -119,13 +111,19 @@ impl Processor {
         }
     }
 
-    async fn handle(&self, event: Event) -> Result<(), TwinEventError> {
+    async fn handle(
+        &self,
+        event: Event,
+        dashboard_data: &mut Metrics,
+    ) -> Result<(), TwinEventError> {
         if let Some(time) = event.time() {
             let diff = Utc::now() - *time;
-            DELTA_T.observe((diff.num_milliseconds() as f64) / 1000.0);
+            metrics::DELTA_T.observe((diff.num_milliseconds() as f64) / 1000.0);
         }
+        let twin_event = TwinEvent::try_from(event)?;
 
-        self.process(TwinEvent::try_from(event)?).await?;
+        dashboard_data.process(&twin_event);
+        self.process(twin_event).await?;
 
         Ok(())
     }
@@ -175,7 +173,7 @@ impl Processor {
 }
 
 #[derive(Clone, Debug)]
-struct TwinEvent {
+pub struct TwinEvent {
     pub application: String,
     pub device: String,
     pub features: Map<String, Value>,
@@ -193,11 +191,8 @@ pub enum TwinEventError {
 
 impl TwinEventError {
     pub fn is_temporary(&self) -> bool {
-        match self {
-            // Assume all MongoDB errors to be temporary. Might need some refinement.
-            Self::Persistence(_) => true,
-            _ => false,
-        }
+        // Assume all MongoDB errors to be temporary. Might need some refinement.
+        matches!(self, Self::Persistence(_))
     }
 }
 

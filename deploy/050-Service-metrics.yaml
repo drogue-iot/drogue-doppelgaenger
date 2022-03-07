@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: doppelgaenger-metrics
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 8081
+      targetPort: metrics
+  selector:
+    app.kubernetes.io/name: doppelgaenger-input

@@ -1,3 +1,4 @@
+mod metrics;
 mod processor;
 
 use actix_web::{web, HttpResponse, HttpServer};
@@ -85,14 +86,12 @@ async fn main() -> anyhow::Result<()> {
     let metrics = config.metrics.clone();
     let app = processor::Processor::new(config).await?;
 
+    let dashboard_data = &mut metrics::Metrics::new();
+
     // run
 
-    prometheus::default_registry()
-        .register(Box::new(processor::DELTA_T.clone()))
-        .unwrap();
-
     select! {
-        _ = app.run() => {},
+        _ = app.run(dashboard_data) => {},
         _ = start_metrics(metrics, prometheus::default_registry().clone()) => {},
     }
 
