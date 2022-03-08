@@ -601,7 +601,7 @@
       "type": "gauge"
     }
   ],
-  "refresh": false,
+  "refresh": "5s",
   "schemaVersion": 35,
   "style": "dark",
   "tags": [],
