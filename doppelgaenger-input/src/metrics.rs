@@ -101,7 +101,7 @@ impl Buttons {
         BUTTON_A_PRESSES.inc_by(new_a_presses);
         BUTTON_B_PRESSES.inc_by(new_b_presses);
 
-        self.button_a_total = b;
+        self.button_a_total = a;
         self.button_b_total = b;
     }
 }
