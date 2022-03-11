@@ -21,6 +21,8 @@ lazy_static! {
         register_histogram!("burrboard_temperature", "the temperature reported by a burrboard").unwrap();
     pub static ref LIGHT_VALUES: Histogram =
         register_histogram!("burrboard_light", "the light reported by a burrboard").unwrap();
+    pub static ref BATTERY_VALUES: Histogram =
+        register_histogram!("burrboard_battery", "the battery level reported by burrboards").unwrap();
 }
 
 pub struct Metrics {
@@ -42,9 +44,10 @@ impl Metrics {
         let button_b = event.features.get("button_b");
         let light = event.features.get("light");
         let temp = event.features.get("temperature");
+        let device_val = event.features.get("device");
 
         // if the payload don't contains those fields it's probably not from a burrboard so we do nothing with it
-        if let (Some(a), Some(b), Some(light), Some(temp)) = (button_a, button_b, light, temp) {
+        if let (Some(a), Some(b), Some(light), Some(temp), Some(device_val)) = (button_a, button_b, light, temp, device_val) {
             let a = a
                 .get("presses")
                 .map(|v| v.as_u64().unwrap_or_default())
@@ -61,10 +64,16 @@ impl Metrics {
                 .get("value")
                 .map(|v| v.as_f64().unwrap_or_default())
                 .unwrap();
+            let battery = device_val
+                .get("battery")
+                .map(|v| v.as_f64().unwrap_or_default())
+                .unwrap();
+
 
             // we don't need to cache temp and light data
             TEMPERATURE_VALUES.observe(temp);
             LIGHT_VALUES.observe(light);
+            BATTERY_VALUES.observe(battery);
 
             // update button presses devices
             if let Some(buttons) = self.devices.get_mut(device) {
