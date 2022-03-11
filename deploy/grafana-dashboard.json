@@ -299,6 +299,10 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "datasource",
+        "uid": "grafana"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -360,6 +364,10 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "eOVJftYnk"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -411,9 +419,8 @@
             "type": "prometheus",
             "uid": "eOVJftYnk"
           },
-          "exemplar": false,
-          "expr": "(burrboard_buttons_a_presses + burrboard_buttons_b_presses )",
-          "instant": false,
+          "exemplar": true,
+          "expr": "increase(burrboard_buttons_a_presses[10s]) + increase(burrboard_buttons_b_presses[10s])",
           "interval": "",
           "legendFormat": "",
           "refId": "A"
@@ -683,6 +690,6 @@
   "timezone": "",
   "title": "summit2",
   "uid": "0T5UJfLnksasa",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
