@@ -21,7 +21,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
+  "id": 3,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -83,7 +83,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -114,10 +114,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -145,7 +141,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -163,6 +159,10 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "datasource",
+        "uid": "grafana"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -178,7 +178,7 @@
               },
               {
                 "color": "red",
-                "value": 30
+                "value": 80
               }
             ]
           },
@@ -207,7 +207,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -215,13 +215,13 @@
             "uid": "eOVJftYnk"
           },
           "exemplar": true,
-          "expr": "(burrboard_event_delta_sum/burrboard_event_delta_count)*1000",
+          "expr": "(rate(burrboard_event_delta_sum[1m])/rate(burrboard_event_delta_count[1m]))*1000",
           "interval": "",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Average system latency",
+      "title": "Average system latency, last minute",
       "type": "stat"
     },
     {
@@ -281,7 +281,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -295,7 +295,7 @@
           "refId": "A"
         }
       ],
-      "title": "A",
+      "title": "Buttons A total presses",
       "type": "stat"
     },
     {
@@ -342,7 +342,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -356,7 +356,7 @@
           "refId": "A"
         }
       ],
-      "title": "B",
+      "title": "Buttons B total presses",
       "type": "stat"
     },
     {
@@ -404,7 +404,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -432,27 +432,29 @@
       },
       "id": 14,
       "panels": [],
-      "title": "Light",
+      "title": "Sensors",
       "type": "row"
     },
     {
+      "datasource": {
+        "type": "datasource",
+        "uid": "grafana"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "continuous-GrYlRd"
           },
           "mappings": [],
+          "max": 4096,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -478,7 +480,7 @@
         "showThresholdLabels": false,
         "showThresholdMarkers": true
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -490,7 +492,7 @@
           "format": "time_series",
           "instant": false,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "Average light",
           "refId": "A"
         },
         {
@@ -499,12 +501,12 @@
             "uid": "eOVJftYnk"
           },
           "exemplar": false,
-          "expr": "burrboard_light_sum/burrboard_light_count",
+          "expr": "rate(burrboard_light_sum[5m])/rate(burrboard_light_count[5m])",
           "format": "time_series",
           "hide": false,
           "instant": true,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "Average light - last 5m",
           "refId": "B"
         }
       ],
@@ -512,47 +514,37 @@
       "type": "gauge"
     },
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 23
+      "datasource": {
+        "type": "datasource",
+        "uid": "grafana"
       },
-      "id": 16,
-      "panels": [],
-      "title": "Temperature",
-      "type": "row"
-    },
-    {
       "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "continuous-BlYlRd"
           },
           "mappings": [],
+          "max": 50,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
-          }
+          },
+          "unit": "celsius"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 24
+        "x": 12,
+        "y": 15
       },
       "id": 19,
       "options": {
@@ -567,7 +559,7 @@
         "showThresholdLabels": false,
         "showThresholdMarkers": true
       },
-      "pluginVersion": "8.4.3",
+      "pluginVersion": "8.4.2",
       "targets": [
         {
           "datasource": {
@@ -579,7 +571,7 @@
           "format": "time_series",
           "instant": false,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "Average temperature",
           "refId": "A"
         },
         {
@@ -588,16 +580,91 @@
             "uid": "eOVJftYnk"
           },
           "exemplar": false,
-          "expr": "burrboard_temperature_sum/burrboard_temperature_count",
+          "expr": "rate(burrboard_temperature_sum[5m])/rate(burrboard_temperature_count[5m])",
           "format": "time_series",
           "hide": false,
           "instant": true,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "Average temperature - last 5m",
           "refId": "B"
         }
       ],
       "title": "Temperature Average value",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "eOVJftYnk"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "#EAB839",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 75
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "id": 23,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "text": {}
+      },
+      "pluginVersion": "8.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "eOVJftYnk"
+          },
+          "exemplar": true,
+          "expr": "rate(burrboard_battery_sum[1m])/rate(burrboard_battery_count[1m])",
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Average battery over the last 5 minutes",
       "type": "gauge"
     }
   ],
@@ -614,8 +681,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "summit",
-  "uid": "0T5UJfLnk",
-  "version": 1,
+  "title": "summit2",
+  "uid": "0T5UJfLnksasa",
+  "version": 2,
   "weekStart": ""
 }
