@@ -218,8 +218,15 @@ impl TryFrom<Event> for TwinEvent {
             }
         };
 
-        let features: Map<String, Value> = serde_json::from_value(payload["features"].take())
-            .map_err(|err| TwinEventError::Conversion(format!("Failed to convert: {err}")))?;
+        let features: Map<String, Value> = match payload.get_mut("features") {
+            Some(payload) => serde_json::from_value(payload.take())
+                .map_err(|err| TwinEventError::Conversion(format!("Failed to convert: {err}")))?,
+            None => {
+                return Err(TwinEventError::Conversion(
+                    "Missing 'features' field".into(),
+                ))
+            }
+        };
 
         Ok(TwinEvent {
             application,
@@ -241,5 +248,39 @@ fn payload(mut event: Event) -> Option<Value> {
         (_, _, Some(Data::Binary(data))) => serde_json::from_slice(&data).ok(),
         (_, _, Some(Data::String(data))) => serde_json::from_str(&data).ok(),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::processor::{TwinEvent, TwinEventError};
+    use cloudevents::{Data, EventBuilder, EventBuilderV10};
+    use serde_json::{json, Value};
+
+    #[test]
+    pub fn test_invalid() {
+        assert!(!parse(Data::Json(Value::Null)).unwrap_err().is_temporary());
+        assert!(!parse(Data::Json(json!({}))).unwrap_err().is_temporary());
+        assert!(!parse(Data::Json(json!({"foo":"bar"})))
+            .unwrap_err()
+            .is_temporary());
+        assert!(!parse(Data::Json(json!({"features":1})))
+            .unwrap_err()
+            .is_temporary());
+    }
+
+    fn parse(data: Data) -> Result<TwinEvent, TwinEventError> {
+        let event = EventBuilderV10::new()
+            .id("id1")
+            .ty("test")
+            .source("test")
+            .extension("application", "a1")
+            .extension("device", "d1")
+            .data("application/json", data)
+            .build()
+            .unwrap();
+        let result = TwinEvent::try_from(event);
+        println!("Result: {result:?}");
+        result
     }
 }
