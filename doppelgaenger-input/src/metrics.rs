@@ -1,7 +1,5 @@
-use crate::processor::TwinEvent;
 use lazy_static::lazy_static;
-use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
-use std::collections::HashMap;
+use prometheus::{register_histogram, Histogram};
 
 lazy_static! {
     // provides the events latency + the total events count
