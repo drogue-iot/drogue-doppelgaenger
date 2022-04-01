@@ -19,9 +19,7 @@ function updateDevice(update) {
 <div class="col">
     <div class="card">
         <div class="card-header"></div>
-        <div class="card-body">
-            <p class="card-text"></p>
-        </div>
+        <div class="device-content"></div>
     </div>
 </div>
 `)
@@ -54,16 +52,57 @@ function updateDevice(update) {
 
     }
 
-    const content = $(`<dl></dl>`);
-    for (const feature of Object.keys(state.features).sort()) {
-        const properties = state.features[feature].properties;
-        content.append($(`<dt>${feature}</dt><dd><code>${JSON.stringify(properties, null, 2)}</code></dd>`));
-    }
+    const content = render(state);
 
     // update
-    card.find(".card-text").empty().append(content);
+    card.find(".device-content").empty().append(content);
     card.addClass("updated");
     setTimeout(() => {
         card.removeClass("updated");
     }, 200);
+}
+
+function render(state) {
+    const content = $(`<ul class="list-group list-group-flush"></ul>`);
+    for (const feature of Object.keys(state.features).sort()) {
+        const properties = state.features[feature].properties;
+        content.append(renderFeature(feature, properties))
+    }
+    return content;
+}
+
+function renderFeature(feature, properties) {
+    let timestamp = properties["timestamp"];
+    if (typeof timestamp === "number") {
+        let date = new Date(timestamp);
+        timestamp = date.toISOString();
+    }
+
+    if (typeof timestamp === "string") {
+        delete properties.timestamp;
+        timestamp = ` <span class="badge bg-light text-dark">${timestamp}</span>`;
+    } else {
+        timestamp = ""
+    }
+
+    let content = $(`<div class="row"></div>`);
+    content.append($(`<div class="col feature-title">${feature}${timestamp}</div>`));
+
+    for (const property of Object.keys(properties).sort()) {
+        let value = properties[property];
+
+        const row = $(`<div class="row"></div>`);
+        row.append($(`<div class="col-3 property-title">${property}</div>`));
+
+        const t = typeof value;
+        if (t !== "string" && t !== "boolean" && t !== "number" ) {
+            value = $(`<code><pre>${JSON.stringify(value, null, 2)}</pre></code>`);
+        }
+        row.append($(`<div class="col-9"></div>`).append(value));
+
+        content = content.add(row);
+        //content.append($(`<dt>${property}</dt><dd><code><pre>${JSON.stringify(value, null, 2)}</pre></code></dd>`))
+    }
+
+    return $(`<li class="list-group-item"></li>`).append(content);
 }

@@ -1,6 +1,8 @@
 import json
 import os
 import signal
+import sys
+
 import tornado.websocket
 import tornado.httpserver
 import tornado.ioloop
@@ -78,30 +80,7 @@ class HomeHandler(tornado.web.RequestHandler):
 
 def sig_handler(sig, frame):
     logger.warning('Caught signal: %s', sig)
-    tornado.ioloop.IOLoop.instance().add_callback(shutdown)
-
-
-MAX_WAIT_SECONDS_BEFORE_SHUTDOWN = 3
-
-
-def shutdown():
-    logger.info('Stopping http server')
-    server.stop()
-
-    logger.info('Will shutdown in %s seconds ...', MAX_WAIT_SECONDS_BEFORE_SHUTDOWN)
-    io_loop = tornado.ioloop.IOLoop.instance()
-
-    deadline = time.time() + MAX_WAIT_SECONDS_BEFORE_SHUTDOWN
-
-    def stop_loop():
-        now = time.time()
-        if now < deadline and (io_loop._callbacks or io_loop._timeouts):
-            io_loop.add_timeout(now + 1, stop_loop)
-        else:
-            io_loop.stop()
-            logging.info('Shutdown')
-
-    stop_loop()
+    os._exit(0)
 
 
 def main():
@@ -114,6 +93,7 @@ def main():
     collection = client[database][application]
 
     global app
+    global loop
 
     app = tornado.web.Application(
         [
@@ -149,7 +129,7 @@ def main():
         if change_stream is not None:
             change_stream.close()
 
-    logger.wan("Exiting...")
+    logger.warning("Exiting...")
 
 
 if __name__ == "__main__":
