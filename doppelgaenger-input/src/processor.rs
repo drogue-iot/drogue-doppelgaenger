@@ -1,6 +1,4 @@
-use crate::metrics;
-use crate::metrics::Metrics;
-use crate::ApplicationConfig;
+use crate::{metrics, ApplicationConfig};
 use bson::{Bson, Document};
 use chrono::Utc;
 use cloudevents::{
@@ -69,7 +67,7 @@ impl Processor {
         Ok(Self { consumer, db })
     }
 
-    pub async fn run(self, dashboard_data: &mut Metrics) {
+    pub async fn run(self) {
         let mut stream = self.consumer.stream();
 
         log::info!("Running stream...");
@@ -84,7 +82,7 @@ impl Processor {
                     })
             }) {
                 None => break,
-                Some(Ok(msg)) => match self.handle(msg.1, dashboard_data).await {
+                Some(Ok(msg)) => match self.handle(msg.1).await {
                     Ok(_) => {
                         if let Err(err) = self.consumer.commit_message(&msg.0, CommitMode::Async) {
                             log::info!("Failed to ack: {err}");
@@ -111,18 +109,13 @@ impl Processor {
         }
     }
 
-    async fn handle(
-        &self,
-        event: Event,
-        dashboard_data: &mut Metrics,
-    ) -> Result<(), TwinEventError> {
+    async fn handle(&self, event: Event) -> Result<(), TwinEventError> {
         if let Some(time) = event.time() {
             let diff = Utc::now() - *time;
             metrics::DELTA_T.observe((diff.num_milliseconds() as f64) / 1000.0);
         }
         let twin_event = TwinEvent::try_from(event)?;
 
-        dashboard_data.process(&twin_event);
         self.process(twin_event).await?;
 
         Ok(())
