@@ -73,14 +73,18 @@ impl Processor {
         log::info!("Running stream...");
 
         loop {
-            match stream.next().await.map(|r| {
+            let event = stream.next().await.map(|r| {
                 r.map_err::<anyhow::Error, _>(|err| err.into())
                     .and_then(|msg| {
                         msg.to_event()
                             .map_err(|err| err.into())
                             .map(|evt| (msg, evt))
                     })
-            }) {
+            });
+
+            log::debug!("Next event: {event:?}");
+
+            match event {
                 None => break,
                 Some(Ok(msg)) => match self.handle(msg.1).await {
                     Ok(_) => {
