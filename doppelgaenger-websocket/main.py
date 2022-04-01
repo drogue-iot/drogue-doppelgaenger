@@ -12,7 +12,6 @@ from bson import json_util
 from healthcheck import TornadoHandler, HealthCheck
 import time
 
-
 health = HealthCheck()
 
 
@@ -70,14 +69,20 @@ async def watch(collection):
 
 class HomeHandler(tornado.web.RequestHandler):
     def get(self):
-        self.render("templates/index.html", simulator_url=os.getenv("SIMULATOR_URL", ""))
+        self.render("templates/index.html",
+                    simulator_url=os.getenv("SIMULATOR_URL", ""),
+                    title=os.getenv("INDEX__TITLE", "Dashboard"),
+                    cols=os.getenv("INDEX__COLS", "row-cols-1 row-cols-md-2 row-cols-xl-4 g-4")
+                    )
 
 
 def sig_handler(sig, frame):
     logger.warning('Caught signal: %s', sig)
     tornado.ioloop.IOLoop.instance().add_callback(shutdown)
 
+
 MAX_WAIT_SECONDS_BEFORE_SHUTDOWN = 3
+
 
 def shutdown():
     logger.info('Stopping http server')
@@ -95,6 +100,7 @@ def shutdown():
         else:
             io_loop.stop()
             logging.info('Shutdown')
+
     stop_loop()
 
 
