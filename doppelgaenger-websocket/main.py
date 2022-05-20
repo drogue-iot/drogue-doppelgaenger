@@ -23,7 +23,7 @@ class ChangesHandler(tornado.websocket.WebSocketHandler):
 
     def initialize(self):
         self.collection = self.application.settings.get('collection')
-        print(f"Collection: {self.collection}")
+        logger.info(f"Collection: {self.collection}")
 
     def check_origin(self, origin):
         return True
