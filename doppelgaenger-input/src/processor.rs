@@ -1,5 +1,5 @@
 use crate::{metrics, ApplicationConfig};
-use bson::{Bson, Document};
+use bson::{spec::BinarySubtype, Bson, Document};
 use chrono::Utc;
 use cloudevents::{
     binding::rdkafka::MessageExt, event::ExtensionValue, AttributesReader, Data, Event,
@@ -135,17 +135,44 @@ impl Processor {
     async fn process(&self, event: TwinEvent) -> Result<(), TwinEventError> {
         log::debug!("Processing twin event: {event:?}");
 
-        let collection = self.db.collection::<ThingState>(&event.application);
+        let mut set = Document::new();
+        let mut unset = Document::new();
 
-        let mut update = Document::new();
-        for (k, v) in event.features {
-            let v: Bson = v.try_into()?;
-            update.insert(format!("features.{k}.properties"), v);
-        }
+        let (application, device) = match event {
+            TwinEvent::Update {
+                application,
+                device,
+                features,
+            } => {
+                for (k, v) in features {
+                    let v: Bson = v.try_into()?;
+                    set.insert(format!("features.{k}.properties"), v);
+                }
+                unset.insert("payload", "");
+                (application, device)
+            }
+            TwinEvent::Binary {
+                application,
+                device,
+                payload,
+            } => {
+                set.insert(
+                    "payload",
+                    bson::Binary {
+                        subtype: BinarySubtype::Generic,
+                        bytes: payload,
+                    },
+                );
+                unset.insert("features", "");
+                (application, device)
+            }
+        };
 
-        if update.is_empty() {
+        if set.is_empty() && unset.is_empty() {
             return Ok(());
         }
+
+        let collection = self.db.collection::<ThingState>(&application);
 
         let update = doc! {
             "$currentDate": {
@@ -154,7 +181,7 @@ impl Processor {
             "$inc": {
                 "revision": 1,
             },
-            "$set": update,
+            "$set": set,
         };
 
         log::debug!("Request update: {:#?}", update);
@@ -162,7 +189,7 @@ impl Processor {
         collection
             .update_one(
                 doc! {
-                    "device": event.device
+                    "device": device
                 },
                 update,
                 Some(UpdateOptions::builder().upsert(true).build()),
@@ -174,10 +201,17 @@ impl Processor {
 }
 
 #[derive(Clone, Debug)]
-pub struct TwinEvent {
-    pub application: String,
-    pub device: String,
-    pub features: Map<String, Value>,
+pub enum TwinEvent {
+    Update {
+        application: String,
+        device: String,
+        features: Map<String, Value>,
+    },
+    Binary {
+        application: String,
+        device: String,
+        payload: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -201,7 +235,7 @@ impl TryFrom<Event> for TwinEvent {
     type Error = TwinEventError;
 
     fn try_from(event: Event) -> Result<Self, Self::Error> {
-        let (application, device, mut payload) = match (
+        let (application, device, payload) = match (
             event.extension("application").cloned(),
             event.extension("device").cloned(),
             payload(event),
@@ -219,35 +253,61 @@ impl TryFrom<Event> for TwinEvent {
             }
         };
 
-        let features: Map<String, Value> = match payload.get_mut("features") {
-            Some(payload) => serde_json::from_value(payload.take())
-                .map_err(|err| TwinEventError::Conversion(format!("Failed to convert: {err}")))?,
-            None => {
-                return Err(TwinEventError::Conversion(
-                    "Missing 'features' field".into(),
-                ))
-            }
-        };
+        match payload {
+            Payload::Json(mut payload) => {
+                let features: Map<String, Value> = match payload.get_mut("features") {
+                    Some(payload) => serde_json::from_value(payload.take()).map_err(|err| {
+                        TwinEventError::Conversion(format!("Failed to convert: {err}"))
+                    })?,
+                    None => {
+                        return Err(TwinEventError::Conversion(
+                            "Missing 'features' field".into(),
+                        ))
+                    }
+                };
 
-        Ok(TwinEvent {
-            application,
-            device,
-            features,
-        })
+                Ok(TwinEvent::Update {
+                    application,
+                    device,
+                    features,
+                })
+            }
+            Payload::Binary(payload) => Ok(TwinEvent::Binary {
+                application,
+                device,
+                payload,
+            }),
+        }
     }
 }
 
-impl TwinEvent {}
+#[derive(Clone, Debug)]
+enum Payload {
+    Json(Value),
+    Binary(Vec<u8>),
+}
 
-fn payload(mut event: Event) -> Option<Value> {
-    if event.datacontenttype() != Some("application/json") {
-        return None;
-    }
-
-    match event.take_data() {
-        (_, _, Some(Data::Json(json))) => Some(json),
-        (_, _, Some(Data::Binary(data))) => serde_json::from_slice(&data).ok(),
-        (_, _, Some(Data::String(data))) => serde_json::from_str(&data).ok(),
+fn payload(mut event: Event) -> Option<Payload> {
+    match event.datacontenttype() {
+        Some("application/json") => match event.take_data() {
+            (_, _, Some(Data::Json(json))) => Some(Payload::Json(json)),
+            (_, _, Some(Data::Binary(data))) => {
+                serde_json::from_slice(&data).map(Payload::Json).ok()
+            }
+            (_, _, Some(Data::String(data))) => serde_json::from_str(&data).map(Payload::Json).ok(),
+            _ => None,
+        },
+        Some("application/octet-stream") => {
+            // assume encrypted data, store as-is
+            match event.take_data() {
+                (_, _, Some(Data::Json(json))) => {
+                    serde_json::to_vec(&json).map(Payload::Binary).ok()
+                }
+                (_, _, Some(Data::Binary(data))) => Some(Payload::Binary(data)),
+                (_, _, Some(Data::String(data))) => Some(Payload::Binary(data.as_bytes().to_vec())),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
