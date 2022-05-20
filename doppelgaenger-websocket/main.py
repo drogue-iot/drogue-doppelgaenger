@@ -89,6 +89,8 @@ def main():
     database = os.environ["DATABASE"]
     application = os.environ["DROGUE_APP"]
 
+    logger.info('Database: %s, collection: %s', database, application)
+
     client = MotorClient(os.environ["MONGODB__URL"])
     collection = client[database][application]
 
