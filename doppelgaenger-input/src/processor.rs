@@ -118,6 +118,13 @@ impl Processor {
             let diff = Utc::now() - *time;
             metrics::DELTA_T.observe((diff.num_milliseconds() as f64) / 1000.0);
         }
+
+        if event.ty() != "io.drogue.event.v1" {
+            // ignore non-data event
+            log::debug!("Skipping non data event: {}", event.ty());
+            return Ok(());
+        }
+
         let twin_event = TwinEvent::try_from(event)?;
 
         self.process(twin_event).await?;
@@ -142,10 +149,7 @@ impl Processor {
 
         let update = doc! {
             "$currentDate": {
-                "lastUpdateTimestamp": { "$type": "timestamp" },
-            },
-            "$setOnInsert": {
-                "creationTimestamp": "$$NOW"
+                "lastUpdateTimestamp": true,
             },
             "$inc": {
                 "revision": 1,
