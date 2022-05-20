@@ -182,6 +182,7 @@ impl Processor {
                 "revision": 1,
             },
             "$set": set,
+            "$unset": unset,
         };
 
         log::debug!("Request update: {:#?}", update);
