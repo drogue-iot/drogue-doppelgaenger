@@ -1,4 +1,3 @@
-
 function encodeDevice(device) {
     return device.replaceAll(/[^a-zA-Z0-9]/g, "-")
 }
@@ -38,7 +37,7 @@ function updateDevice(update) {
             }
 
             if (device.localeCompare(currentDevice) > 0) {
-                if (best === null || ( best.device.localeCompare(currentDevice) < 0)) {
+                if (best === null || (best.device.localeCompare(currentDevice) < 0)) {
                     best = {device: currentDevice, element};
                 }
             }
@@ -64,10 +63,39 @@ function updateDevice(update) {
 
 function render(state) {
     const content = $(`<ul class="list-group list-group-flush"></ul>`);
-    for (const feature of Object.keys(state.features).sort()) {
-        const properties = state.features[feature].properties;
-        content.append(renderFeature(feature, properties))
+
+    if (state.payload !== undefined) {
+        const payload = state.payload["$binary"];
+        try {
+            state = JSON.parse(ENC.decode(payload));
+            console.log("State:", state)
+        }
+        catch(err) {
+            console.log("Unable to decode: ", err)
+            state.payload["$binary"] = "Failed to decode: " + err + "\n<br><br>\n" + payload
+        }
+
     }
+
+    if (state.features !== undefined) {
+        console.debug("Using JSON payload:", state.features);
+        for (const feature of Object.keys(state.features).sort()) {
+            let properties;
+            if (state.features[feature].properties !== undefined) {
+                properties = state.features[feature].properties;
+            } else {
+                properties = state.features[feature];
+            }
+            content.append(renderFeature(feature, properties))
+        }
+
+    } else if (state.payload !== undefined) {
+        const payload = state.payload["$binary"];
+        // console.debug("Using binary payload: ", payload);
+        content.append($(`<div><code>${payload}</code></div>`));
+
+    }
+
     return content;
 }
 
@@ -95,7 +123,7 @@ function renderFeature(feature, properties) {
         row.append($(`<div class="col-3 property-title">${property}</div>`));
 
         const t = typeof value;
-        if (t !== "string" && t !== "boolean" && t !== "number" ) {
+        if (t !== "string" && t !== "boolean" && t !== "number") {
             value = $(`<code><pre>${JSON.stringify(value, null, 2)}</pre></code>`);
         }
         row.append($(`<div class="col-9"></div>`).append(value));
@@ -105,4 +133,75 @@ function renderFeature(feature, properties) {
     }
 
     return $(`<li class="list-group-item"></li>`).append(content);
+}
+
+
+function bufferToHex (buffer) {
+    return [...new Uint8Array (buffer)]
+        .map (b => b.toString (16).padStart (2, "0"))
+        .join ("");
+}
+
+class Encryption {
+
+    #ready = false;
+    #sessionKey;
+    #session;
+
+    constructor() {
+    }
+
+    #checkReady() {
+
+        if (this.#ready && this.#sessionKey) {
+
+            this.#session = undefined;
+
+            const session = new Olm.InboundGroupSession();
+            session.create(this.#sessionKey);
+
+            this.#session = session;
+
+        }
+
+    }
+
+    set sessionKey(key) {
+        this.#sessionKey = key;
+
+        this.#checkReady();
+    }
+
+    set ready(ready) {
+        this.#ready = ready;
+
+        this.#checkReady();
+    }
+
+    decode(payload) {
+        if (!this.#ready) {
+            throw "Not ready yet";
+        }
+
+        if (!this.#session) {
+            throw "Session key missing";
+        }
+
+        payload = payload.replace(/=+$/, "");
+
+        //console.log("Decoding: ", payload)
+
+        return this.#session.decrypt(payload).plaintext;
+    }
+
+}
+
+const ENC = new Encryption();
+
+function olmReady() {
+    ENC.ready = true;
+}
+
+function olmSetSessionKey(key) {
+    ENC.sessionKey = key;
 }

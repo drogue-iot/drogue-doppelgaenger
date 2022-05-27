@@ -1,4 +1,4 @@
-motor
+motor[srv]
 tornado
 dnspython
 logzero

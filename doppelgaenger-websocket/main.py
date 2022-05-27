@@ -1,7 +1,6 @@
 import json
 import os
 import signal
-import sys
 
 import tornado.websocket
 import tornado.httpserver
@@ -12,7 +11,6 @@ from dotenv import load_dotenv
 from logzero import logger
 from bson import json_util
 from healthcheck import TornadoHandler, HealthCheck
-import time
 
 health = HealthCheck()
 
@@ -73,6 +71,7 @@ class HomeHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("templates/index.html",
                     simulator_url=os.getenv("SIMULATOR_URL", ""),
+                    socket_override_url=os.getenv("SOCKET_OVERRIDE_URL", ""),
                     title=os.getenv("INDEX__TITLE", "Dashboard"),
                     cols=os.getenv("INDEX__COLS", "row-cols-1 row-cols-md-2 row-cols-xl-4 g-4")
                     )
@@ -116,6 +115,7 @@ def main():
     )
 
     app.listen(8082)
+    logger.info("Listening on port 8082")
 
     signal.signal(signal.SIGTERM, sig_handler)
     signal.signal(signal.SIGINT, sig_handler)

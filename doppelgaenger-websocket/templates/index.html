@@ -60,6 +60,23 @@
         </div>
     </div>
 
+    <div class="row g-3 align-items-baseline">
+        <div class="col-auto">
+            <label for="sessionKey" class="col-form-label">Session Key</label>
+        </div>
+        <div class="col-auto">
+            <div class="input-group mb-3">
+                <input type="password" id="sessionKey" class="form-control" aria-describedby="sessionKeyHelp">
+                <button type="button" class="btn btn-outline-secondary" id="setSessionKey">Apply</button>
+            </div>
+        </div>
+        <div class="col-auto">
+            <span id="sessionKeyHelp" class="form-text">
+                OLM group session key
+            </span>
+        </div>
+    </div>
+
     <div class="row {{ cols }}" id="devices"></div>
 
 </main>
@@ -70,11 +87,26 @@
         integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p"
         crossorigin="anonymous"></script>
 
+<script src="olm.js"></script>
 <script src="index.js"></script>
 
 <script>
     const showLastMessage = false;
+
+    Olm.init().then(() => {
+       console.log("OLM initialized");
+       olmReady();
+    });
+
+    $('#setSessionKey').on("click", () => {
+        const sessionKey = $('#sessionKey').val();
+        olmSetSessionKey(sessionKey);
+    });
+
     // const socketOverride = "wss://dashboard-ctron-octoprint.apps.wonderful.iot-playground.org/socket";
+    {% if socket_override_url != "" %}
+    const socketOverride = "{{ socket_override_url }}";
+    {% end %}
 
     if(showLastMessage) {
         $("#last-message-container").show();
