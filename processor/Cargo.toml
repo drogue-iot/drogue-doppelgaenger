@@ -1,0 +1,16 @@
+[package]
+name = "drogue-doppelgaenger-processor"
+description = "Drogue IoT Doppelgänger Processor"
+version = "0.1.0"
+authors = ["Jens Reimann <jreimann@redhat.com>"]
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+env_logger = "0.9"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+
+drogue-doppelgaenger-common = { path = "../common" }

@@ -1,0 +1,12 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: redis
+spec:
+  containers:
+    - name: redis
+      image: docker.io/library/redis:7
+      ports:
+        - containerPort: 6379
+          hostPort: 6379

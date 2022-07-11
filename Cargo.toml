@@ -1,0 +1,12 @@
+[workspace]
+
+members = [
+    "backend",
+    "common",
+    "processor",
+]
+exclude = [
+    "frontend",
+]
+
+[patch.crates-io]

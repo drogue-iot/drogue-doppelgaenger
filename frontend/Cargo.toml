@@ -1,0 +1,25 @@
+[package]
+name = "drogue-doppelgaenger-frontend"
+description = "Drogue IoT Doppelgänger Console Frontend"
+version = "0.1.0"
+authors = ["Jens Reimann <jreimann@redhat.com>"]
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+patternfly-yew = "0.2.0"
+wasm-logger = "0.2"
+yew = "0.19"
+yew-agent = "0.1"
+yew-oauth2 = { version = "0.3.0", features = ["openid", "router"] }
+yew-router = { version = "0.16.1", package = "yew-router-nested" }
+
+[features]
+default = []
+debug = []
+
+[profile.release]
+panic = 'abort'
+codegen-units = 1
+opt-level = 's'
+lto = true
