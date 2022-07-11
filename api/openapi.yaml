@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: Drogue Doppelgaegner API
+  license:
+    identifier: Apache-2.0
+    name: Apache 2.0
+  contact:
+    url: https://drogue.io
+  version: "0.1.0"
+
+paths:
+  '/api/v1alpha1/{application}/{thing}':
+    get:
+      responses:
+        '200':
+          description: Returns the state of the thing.
+        '404':
+          description: The thing could not be found.
+        '500':
+          description: An internal error occurred.
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/ErrorInformation'
+
+
+components:
+
+  parameters:
+    application:
+      name: application
+      in: path
+      description: The application scope
+      schema:
+        type: string
+    device:
+      name: thing
+      in: path
+      description: The name of the thing
+      schema:
+        type: string
+
+  schemas:
+
+    Thing:
+      type: object
+      properties:
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        schema:
+          $ref: '#/components/schemas/Schema'
+
+
+    Metadata:
+      type: object
+      properties:
+        name:
+          type: string
+        application:
+          type: string
+        generation:
+          type: number
+          minimum: 0
+        resourceVersion:
+          type: string
+        labels:
+          type: string
+          additionalProperties:
+            type: string
+        annotations:
+          type: string
+          additionalProperties:
+            type: string
+
+      required:
+        - name
+        - application
+
+    Schema:
+      type: object
+
+    ReportedState:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/ReportedFeature'
+
+    DesiredState:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/DesiredFeature'
+
+    SyntheticState:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/SyntheticFeature'
+
+    Reconciliation:
+      type: object
+
+    ReportedFeature:
+      type: object
+      properties:
+        lastUpdate:
+          $ref: "Timestamp"
+          description: "Timestamp of the last update"
+        value:
+          $ref: "#/components/schemas/AnyValue"
+      required:
+        - lastUpdate
+
+    DesiredFeature:
+      type: object
+      properties:
+        lastUpdate:
+          $ref: "Timestamp"
+          description: "Timestamp of the last update"
+        validUntil:
+          $ref: "Timestamp"
+        lastAttempt:
+          $ref: "Timestamp"
+        value:
+          $ref: "#/components/schemas/AnyValue"
+        method:
+          type: object
+          description: The method of reconciling reported vs desired state
+      required:
+        - lastUpdate
+
+    SyntheticFeature:
+      oneOf:
+        - type: object
+          properties:
+            script:
+              type: string
+        - type: object
+          properties:
+            wasm:
+              $ref: '#/components/schemas/Blob'
+
+    ErrorInformation:
+      type: object
+      properties:
+        error:
+          type: string
+          description: The machine-readable error type.
+        message:
+          type: string
+          description: A human-readable error message.
+      required:
+        - error
+
+    Timestamp:
+      type: string
+      format: "date-time"
+
+    Blob:
+      type: string
+      format: "byte"
+
+    AnyValue: {}
