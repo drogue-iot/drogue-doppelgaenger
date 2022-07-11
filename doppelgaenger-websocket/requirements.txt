@@ -1,7 +1,0 @@
-motor[srv]
-tornado
-dnspython
-logzero
-python-dotenv
-bson
-py-healthcheck
