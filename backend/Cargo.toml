@@ -1,0 +1,18 @@
+[package]
+name = "drogue-doppelgaenger-backend"
+description = "Drogue IoT Doppelgänger Console Backend"
+version = "0.1.0"
+authors = ["Jens Reimann <jreimann@redhat.com>"]
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+actix-web = "4"
+anyhow = "1"
+futures = "0.3"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+
+drogue-doppelgaenger-common = { path = "../common" }
