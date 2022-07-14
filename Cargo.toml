@@ -1,9 +1,10 @@
 [workspace]
 
 members = [
+    "core",
     "backend",
-    "common",
     "processor",
+    "server",
 ]
 exclude = [
     "frontend",

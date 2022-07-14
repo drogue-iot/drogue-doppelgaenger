@@ -1,0 +1,27 @@
+[package]
+name = "drogue-doppelgaenger-server"
+description = "Drogue IoT Doppelgänger all-in-one server"
+version = "0.1.0"
+authors = ["Jens Reimann <jreimann@redhat.com>"]
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+actix-web = "4"
+anyhow = "1"
+dotenv = "0.15"
+env_logger = "0.9"
+futures = "0.3"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+
+drogue-doppelgaenger-core = { path = "../core" }
+drogue-doppelgaenger-backend = { path = "../backend" }
+drogue-doppelgaenger-processor = { path = "../processor" }
+
+deadpool-postgres = { version = "0.10", features = ["rt_tokio_1", "serde"] }
+postgres-native-tls = { version = "0.5" }
+tokio-postgres = { version = "0.7", features = ["runtime", "with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
+diesel = { version = "1.4", features = ["postgres"] }
+diesel_migrations = { version = "1.4", features = ["postgres"] }

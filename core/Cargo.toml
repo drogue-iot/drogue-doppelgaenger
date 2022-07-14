@@ -1,15 +1,18 @@
 [package]
-name = "drogue-doppelgaenger-common"
-description = "Drogue IoT Doppelgänger Common Code"
+name = "drogue-doppelgaenger-core"
+description = "Drogue IoT Doppelgänger Code"
 version = "0.1.0"
 authors = ["Jens Reimann <jreimann@redhat.com>"]
 edition = "2021"
 license = "Apache-2.0"
 
 [dependencies]
+actix-web = "4"
 anyhow = "1"
 async-trait = "0.1"
-actix-web = "4"
+base64 = "0.13"
+base64-serde = "0.6"
+bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.13"
 dotenv = "0.15"
@@ -17,25 +20,31 @@ env_logger = "0.9"
 futures = "0.3"
 log = "0.4"
 opentelemetry = { version = "0.17", features = ["rt-tokio"] }
+rdkafka = { version = "0.28", features = ["sasl", "ssl"] }
 schemars = { version = "0.8", features = ["bytes", "chrono"] }
 serde = "1"
 serde_json = "1"
 thiserror = "1"
+tokio = "1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.17"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-base64 = "0.13"
-base64-serde = "0.6"
-bytes = "1"
-
+uuid = { version = "1", features = ["v4"] }
+humantime-serde = "1"
 
 opentelemetry-jaeger = { version = "0.16", features = ["rt-tokio"], optional = true }
 
-redis = { version = "0.21", features = ["tokio-comp", "tokio-native-tls-comp"] }
-deadpool-redis = { version = "0.10", features = ["rt_tokio_1", "serde"] }
+deadpool-postgres = { version = "0.10", features = ["rt_tokio_1", "serde"] }
+postgres-native-tls = { version = "0.5" }
+native-tls = "0.2"
+tokio-postgres = { version = "0.7", features = ["runtime", "with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
+
+deno_core = { version = "0.142" }
 
 [features]
 jaeger = ["opentelemetry-jaeger"]
 
 [dev-dependencies]
 serde_yaml = "0.8"
+tokio = { version = "1", features = ["full"] }
