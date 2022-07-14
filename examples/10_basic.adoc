@@ -1,0 +1,36 @@
+= Basics
+
+== Create a new thing
+
+[source,shell]
+----
+http POST localhost:8080/api/v1alpha1/things metadata:='{"name": "foo", "application":"default"}'
+----
+
+== Delete a thing
+
+[source,shell]
+----
+http DELETE localhost:8080/api/v1alpha1/things/default/things/foo
+----
+
+== Get a thing
+
+[source,shell]
+----
+http GET localhost:8080/api/v1alpha1/things/default/things/foo
+----
+
+== Update a thing
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things metadata:='{"name": "foo", "application":"default"}'
+----
+
+== Update reported state
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedState temperature:=42
+----

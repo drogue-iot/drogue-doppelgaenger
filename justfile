@@ -1,5 +1,5 @@
 start-deps:
-    podman play kube develop/dependencies.yaml
+    podman play kube develop/services.yaml
 
 stop-deps:
-    podman play kube develop/dependencies.yaml --down
+    podman play kube develop/services.yaml --down

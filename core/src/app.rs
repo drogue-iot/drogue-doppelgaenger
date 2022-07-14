@@ -23,7 +23,7 @@ macro_rules! main {
         const NAME: &str = env!("CARGO_PKG_NAME");
         const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 
-        use drogue_doppelgaenger_common::config::ConfigFromEnv;
+        use drogue_doppelgaenger_core::config::ConfigFromEnv;
         $crate::app::init();
 
         println!(r#"______ ______  _____  _____  _   _  _____   _____         _____ 
@@ -33,7 +33,7 @@ macro_rules! main {
 | |/ / | |\ \ \ \_/ /| |_\ \| |_| || |___   _| |_ | (_) |  | |  
 |___/  \_| \_| \___/  \____/ \___/ \____/   \___/  \___/   \_/  
 Drogue IoT {} - {} {} ({})
-"#, drogue_doppelgaenger_common::version::VERSION, NAME, VERSION, DESCRIPTION);
+"#, drogue_doppelgaenger_core::version::VERSION, NAME, VERSION, DESCRIPTION);
 
         std::io::stdout().flush().ok();
 

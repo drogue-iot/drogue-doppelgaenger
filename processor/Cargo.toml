@@ -13,4 +13,4 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 
-drogue-doppelgaenger-common = { path = "../common" }
+drogue-doppelgaenger-core = { path = "../core" }
