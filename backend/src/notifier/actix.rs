@@ -2,28 +2,27 @@ use super::{CLIENT_TIMEOUT, HEARTBEAT_INTERVAL};
 use crate::notifier::{Request, Response};
 use actix::{Actor, ActorContext, AsyncContext, Handler, SpawnHandle, StreamHandler, WrapFuture};
 use actix_web_actors::ws::{self, CloseCode, CloseReason};
-use drogue_doppelgaenger_core::listener::Message;
-use drogue_doppelgaenger_core::notifier::Notifier;
-use drogue_doppelgaenger_core::service::Service;
-use drogue_doppelgaenger_core::storage::Storage;
-use drogue_doppelgaenger_core::{listener::KafkaSource, service::Id};
+use drogue_doppelgaenger_core::{
+    listener::{KafkaSource, Message},
+    notifier::Notifier,
+    service::{Id, Service},
+    storage::Storage,
+};
 use futures::StreamExt;
-use std::sync::Arc;
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
 mod message {
     use crate::notifier::Response;
     use actix::Message;
     use actix_web_actors::ws::CloseReason;
-    use drogue_doppelgaenger_core::service::Id;
 
     #[derive(Message)]
     #[rtype(result = "()")]
-    pub struct Subscribe(pub Id);
+    pub struct Subscribe(pub String);
     #[derive(Message)]
     #[rtype(result = "()")]
-    pub struct Unsubscribe(pub Id);
+    pub struct Unsubscribe(pub String);
     #[derive(Message)]
     #[rtype(result = "Result<(), serde_json::Error>")]
     pub struct Event(pub Response);
@@ -78,13 +77,13 @@ impl<S: Storage, N: Notifier> WebSocketHandler<S, N> {
         result: Result<Request, serde_json::Error>,
     ) {
         match result {
-            Ok(Request::Subscribe(id)) if self.thing.is_none() => {
-                ctx.address().do_send(message::Subscribe(id));
+            Ok(Request::Subscribe { thing }) if self.thing.is_none() => {
+                ctx.address().do_send(message::Subscribe(thing));
             }
-            Ok(Request::Unsubscribe(id)) if self.thing.is_none() => {
-                ctx.address().do_send(message::Unsubscribe(id));
+            Ok(Request::Unsubscribe { thing }) if self.thing.is_none() => {
+                ctx.address().do_send(message::Unsubscribe(thing));
             }
-            Ok(Request::Subscribe(_) | Request::Unsubscribe(_)) => {
+            Ok(Request::Subscribe { .. } | Request::Unsubscribe { .. }) => {
                 ctx.close(Some(CloseReason {
                     code: CloseCode::Unsupported,
                     description: Some(format!(
@@ -112,10 +111,7 @@ impl<S: Storage, N: Notifier> Actor for WebSocketHandler<S, N> {
         self.start_heartbeat(ctx);
         if let Some(thing) = &self.thing {
             log::info!("Starting in single-thing mode: {thing}");
-            if let Err(err) = ctx.address().try_send(message::Subscribe(Id {
-                application: self.application.clone(),
-                thing: thing.clone(),
-            })) {
+            if let Err(err) = ctx.address().try_send(message::Subscribe(thing.clone())) {
                 log::warn!("Failed to initialize single-thing listener: {err}");
                 ctx.close(Some(CloseReason {
                     code: CloseCode::Abnormal,
@@ -167,7 +163,10 @@ impl<S: Storage, N: Notifier> Handler<message::Subscribe> for WebSocketHandler<S
     type Result = ();
 
     fn handle(&mut self, msg: message::Subscribe, ctx: &mut Self::Context) -> Self::Result {
-        let id = msg.0;
+        let id = Id {
+            application: self.application.clone(),
+            thing: msg.0,
+        };
         if self.listeners.contains_key(&id) {
             return;
         }
@@ -223,7 +222,11 @@ impl<S: Storage, N: Notifier> Handler<message::Unsubscribe> for WebSocketHandler
     type Result = ();
 
     fn handle(&mut self, msg: message::Unsubscribe, ctx: &mut Self::Context) -> Self::Result {
-        if let Some(task) = self.listeners.remove(&msg.0) {
+        let id = Id {
+            application: self.application.clone(),
+            thing: msg.0,
+        };
+        if let Some(task) = self.listeners.remove(&id) {
             ctx.cancel_future(task);
         }
     }

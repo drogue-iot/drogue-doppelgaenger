@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Example Thing Schema",
+  "description": "Just testing",
+  "type": "object",
+  "properties": {
+    "reportedState": {
+      "type": "object",
+      "properties": {
+        "temperature": {
+          "type": "number"
+        }
+      }
+    }
+  }
+
+}

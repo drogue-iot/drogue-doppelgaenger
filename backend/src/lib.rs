@@ -50,7 +50,8 @@ pub fn configure<S: Storage, N: Notifier>(
         ctx.service(
             web::resource("/api/v1alpha1/things/{application}/things/{thing}")
                 .route(web::get().to(endpoints::things_get::<S, N>))
-                .route(web::delete().to(endpoints::things_delete::<S, N>)),
+                .route(web::delete().to(endpoints::things_delete::<S, N>))
+                .route(web::patch().to(endpoints::things_patch::<S, N>)),
         );
         ctx.service(
             web::resource("/api/v1alpha1/things/{application}/things/{thing}/reportedState")

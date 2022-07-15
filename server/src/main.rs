@@ -1,13 +1,14 @@
 #[macro_use]
 extern crate diesel_migrations;
 
-use actix_web::middleware::Logger;
-use actix_web::{App, HttpServer};
+use actix_web::{middleware::Logger, App, HttpServer};
 use anyhow::anyhow;
-use drogue_doppelgaenger_core::notifier::kafka;
-use drogue_doppelgaenger_core::storage::postgres;
-use drogue_doppelgaenger_core::{app::run_main, config::ConfigFromEnv, service};
+use drogue_doppelgaenger_core::{
+    app::run_main, config::ConfigFromEnv, notifier::kafka, service, storage::postgres,
+};
 use futures::{FutureExt, TryFutureExt};
+use rdkafka::admin::{AdminOptions, NewTopic, TopicReplication};
+use rdkafka::{admin::AdminClient, config::FromClientConfig};
 use tokio::runtime::Handle;
 
 embed_migrations!("../database-migration/migrations");
@@ -53,6 +54,21 @@ pub async fn run_migrations(db: &deadpool_postgres::Config) -> anyhow::Result<()
     Ok(())
 }
 
+async fn create_topic(config: &kafka::Config) -> anyhow::Result<()> {
+    let topic = config.topic.clone();
+    let config: rdkafka::ClientConfig = config.clone().into();
+    let client = AdminClient::from_config(&config)?;
+
+    client
+        .create_topics(
+            &[NewTopic::new(&topic, 1, TopicReplication::Fixed(1))],
+            &AdminOptions::new(),
+        )
+        .await?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv()?;
@@ -60,19 +76,20 @@ async fn main() -> anyhow::Result<()> {
 
     let server = Server::from_env()?;
 
+    run_migrations(&server.db).await.unwrap();
+    create_topic(&server.kafka_sink).await.unwrap();
+
     let backend = drogue_doppelgaenger_backend::Config::<postgres::Storage, kafka::Notifier> {
         application: server.application.clone(),
         service: service::Config {
             storage: postgres::Config {
                 application: server.application,
-                postgres: server.db.clone(),
+                postgres: server.db,
             },
             notifier: server.kafka_sink,
         },
         listener: server.kafka_source,
     };
-
-    run_migrations(&server.db).await.unwrap();
 
     let configurator = drogue_doppelgaenger_backend::configure(backend)?;
 

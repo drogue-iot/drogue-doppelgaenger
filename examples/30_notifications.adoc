@@ -1,6 +1,19 @@
 = Notifications
 
-== Subscribe to a thing
+== Subscribe to things
+
+* Connect to `ws://localhost:8080/api/v1alpha1/things/default/notifications`
+* Send:
++
+[source,json]
+----
+{
+  "type": "subscribe",
+  "thing": "foo"
+}
+----
+
+== Subscribe to a single thing
 
 [source,shell]
 ----
