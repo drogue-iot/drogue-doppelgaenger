@@ -125,6 +125,7 @@ impl KafkaSource {
             }
         }
 
+        // FIXME: as tokio swallows up panics, we need to bring this to the main method
         panic!("Kafka listener exited!");
     }
 

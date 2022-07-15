@@ -9,8 +9,11 @@
           integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
 
     <style>
-.card.drogue-thing-sub-disconnected .card-footer .text-muted {
+.card.text-white .card-footer .text-muted {
     color: white !important;
+}
+.card.text-white .card-header code {
+    color: bisque !important;
 }
     </style>
 </head>
@@ -37,15 +40,26 @@
 
 <main>
     <div class="container-fluid pt-3">
-        <div class="row row-cols-1 row-cols-md-2 g-4">
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
             <div class="col">
                 <div class="card" id="thing-foo">
                     <div class="card-header">
                         <code>foo</code> <span class="drogue-thing-flags"></span>
                     </div>
-                    <div class="card-body">
-                        <p class="card-text"><pre><span class="drogue-thing-state"></span></pre></p>
-                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="temperature">
+                            <div class="col-6 fw-bold">Temperature</div>
+                            <div class="col-6" data-drogue-thing-render-unit="°C" data-drogue-thing-render-value></div>
+                        </li>
+                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="humidity">
+                            <div class="col-6 fw-bold">Humidity</div>
+                            <div class="col-6" data-drogue-thing-render-unit="%" data-drogue-thing-render-value></div>
+                        </li>
+                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="pressure">
+                            <div class="col-6 fw-bold">Pressure</div>
+                            <div class="col-6" data-drogue-thing-render-unit=" hPa" data-drogue-thing-render-value></div>
+                        </li>
+                    </ul>
                     <div class="card-footer">
                         <small class="drogue-thing-sub-state text-muted"></small>
                     </div>
@@ -65,7 +79,25 @@
 
 <script>
     const api = new Api("http://localhost:8080", "default");
-    new ThingCard(new Thing(api, "foo"), $('#thing-foo'));
+    new ThingCard(new Thing(api, "foo"), $('#thing-foo'), {
+        showTimestamps: false,
+        labelsToCardStyle: (labels) => {
+            if ("overTemp" in labels) {
+                return "error";
+            }
+            if ("highTemp" in labels) {
+                return "warning";
+            }
+        },
+        labelsToPropertyStyle: (labels, name) => {
+            if ("overTemp" in labels && name === "temperature") {
+                return "error";
+            }
+            if ("highTemp" in labels && name === "temperature") {
+                return "warning";
+            }
+        }
+    });
 </script>
 
 </body>

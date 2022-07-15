@@ -1,17 +1,26 @@
 mod deno;
 
 use crate::machine::deno::DenoOptions;
-use crate::model::{Changed, Metadata, Thing};
+use crate::model::{Changed, JsonSchema, Metadata, Schema, Thing, ThingState};
+use anyhow::anyhow;
+use deno_core::url::Url;
+use jsonschema::{Draft, JSONSchema, SchemaResolver, SchemaResolverError};
+use serde_json::Value;
 use std::convert::Infallible;
+use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Mutator: {0}")]
-    Mutator(#[source] Box<dyn std::error::Error>),
+    Mutator(Box<dyn std::error::Error>),
     #[error("Reconciler: {0}")]
     Reconcile(#[source] anyhow::Error),
+    #[error("Validation failed: {0}")]
+    Validation(#[source] anyhow::Error),
+    #[error("Internal: {0}")]
+    Internal(#[source] anyhow::Error),
 }
 
 pub struct Machine {
@@ -24,21 +33,13 @@ impl Machine {
     }
 
     pub async fn create(new_thing: Thing) -> Result<Thing, Error> {
-        Self::new(Thing {
-            metadata: new_thing.metadata.clone(),
-
-            reported_state: Default::default(),
-            desired_state: Default::default(),
-            synthetic_state: Default::default(),
-
-            reconciliation: Default::default(),
-        })
-        .update(|mut thing| async {
-            thing.reported_state = new_thing.reported_state;
-            thing.desired_state = new_thing.desired_state;
-            thing.synthetic_state = new_thing.synthetic_state;
-            Ok::<_, Infallible>(thing)
-        })
+        // Creating means that we start with an empty thing, and then set the initial state.
+        // This allows to run through the reconciliation initially.
+        Self::new(Thing::new(
+            &new_thing.metadata.application,
+            &new_thing.metadata.name,
+        ))
+        .update(|_| async { Ok::<_, Infallible>(new_thing) })
         .await
     }
 
@@ -48,6 +49,7 @@ impl Machine {
         Fut: Future<Output = Result<Thing, E>>,
         E: std::error::Error + 'static,
     {
+        // capture immutable or internal metadata
         let Metadata {
             name,
             application,
@@ -59,15 +61,51 @@ impl Machine {
             labels: _,
         } = self.thing.metadata.clone();
 
-        let original_state = self.thing;
-        let new_state = f(original_state.clone())
+        // start with original state
+
+        let original_state = Arc::new(self.thing);
+
+        // apply the update
+
+        let new_state = f((*original_state).clone())
             .await
             .map_err(|err| Error::Mutator(Box::new(err)))?;
 
-        let original_state = Arc::new(original_state);
+        // validate the outcome
+
+        match &new_state.schema {
+            Some(Schema::Json(schema)) => match schema {
+                JsonSchema::Draft7(schema) => {
+                    let compiled = JSONSchema::options()
+                        .with_draft(Draft::Draft7)
+                        .with_resolver(RejectResolver)
+                        .compile(schema)
+                        .map_err(|err| {
+                            Error::Validation(anyhow!("Failed to compile schema: {err}"))
+                        })?;
+
+                    let state: ThingState = (&new_state).into();
+
+                    if !compiled.is_valid(&serde_json::to_value(&state).map_err(|err| {
+                        Error::Internal(
+                            anyhow::Error::from(err).context("Failed serializing thing state"),
+                        )
+                    })?) {
+                        return Err(Error::Validation(anyhow!(
+                            "New state did not validate against configured schema"
+                        )));
+                    }
+                }
+            },
+            None => {}
+        }
+
+        // reconcile the result
+
         let new_state = reconcile(original_state, new_state).await?;
 
-        // replace internal metadata
+        // reapply the captured metadata
+
         let new_state = Thing {
             metadata: Metadata {
                 name,
@@ -80,6 +118,8 @@ impl Machine {
             },
             ..new_state
         };
+
+        // done
 
         Ok(new_state)
     }
@@ -109,6 +149,14 @@ async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Th
     Ok(new_thing)
 }
 
+pub struct RejectResolver;
+
+impl SchemaResolver for RejectResolver {
+    fn resolve(&self, _: &Value, _: &Url, _: &str) -> Result<Arc<Value>, SchemaResolverError> {
+        Err(anyhow!("Schema resolving is not allowed."))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -123,6 +171,7 @@ mod test {
         assert_eq!(
             Thing {
                 metadata: test_metadata(),
+                schema: None,
                 reported_state: Default::default(),
                 desired_state: Default::default(),
                 synthetic_state: Default::default(),
@@ -153,6 +202,7 @@ mod test {
         assert_eq!(
             Thing {
                 metadata: test_metadata(),
+                schema: None,
                 reported_state: {
                     let mut r = BTreeMap::new();
                     r.insert(
@@ -194,6 +244,7 @@ mod test {
     fn test_thing() -> Thing {
         Thing {
             metadata: test_metadata(),
+            schema: None,
             reported_state: Default::default(),
             desired_state: Default::default(),
             synthetic_state: Default::default(),

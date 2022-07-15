@@ -4,14 +4,13 @@ mod updater;
 
 pub use error::*;
 pub use id::Id;
+use std::convert::Infallible;
 pub use updater::*;
 
 use crate::machine::Machine;
 use crate::model::Thing;
 use crate::notifier::Notifier;
-use crate::storage;
-use crate::storage::Storage;
-use std::convert::Infallible;
+use crate::storage::{self, Storage};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config<S: Storage, N: Notifier> {
@@ -25,7 +24,24 @@ pub struct Service<S: Storage, N: Notifier> {
 }
 
 pub trait Updater {
+    type Error: std::error::Error + 'static;
+
+    fn update(self, thing: Thing) -> Result<Thing, Self::Error>;
+}
+
+pub trait InfallibleUpdater {
     fn update(self, thing: Thing) -> Thing;
+}
+
+impl<I> Updater for I
+where
+    I: InfallibleUpdater,
+{
+    type Error = Infallible;
+
+    fn update(self, thing: Thing) -> Result<Thing, Self::Error> {
+        Ok(InfallibleUpdater::update(self, thing))
+    }
 }
 
 impl<S: Storage, N: Notifier> Service<S, N> {
@@ -71,10 +87,7 @@ impl<S: Storage, N: Notifier> Service<S, N> {
             .map_err(Error::Storage)?;
 
         let mut new_thing = Machine::new(current_thing.clone())
-            .update(|thing| async {
-                let thing = updater.update(thing);
-                Ok::<_, Infallible>(thing)
-            })
+            .update(|thing| async { updater.update(thing) })
             .await?;
 
         if current_thing == new_thing {

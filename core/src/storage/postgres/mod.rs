@@ -1,5 +1,6 @@
 mod utils;
 
+use crate::model::Schema;
 use crate::{
     model::{DesiredFeature, Metadata, Reconciliation, ReportedFeature, SyntheticFeature, Thing},
     storage::{self, UpdateError},
@@ -36,6 +37,9 @@ pub struct ThingEntity {
 /// The persisted data field
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Data {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<Schema>,
+
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub reported_state: BTreeMap<String, ReportedFeature>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -50,6 +54,7 @@ pub struct Data {
 impl From<&Thing> for Data {
     fn from(value: &Thing) -> Self {
         Self {
+            schema: value.schema.clone(),
             reported_state: value.reported_state.clone(),
             desired_state: value.desired_state.clone(),
             synthetic_state: value.synthetic_state.clone(),
@@ -156,6 +161,7 @@ WHERE
                         annotations: entity.annotations,
                         labels: entity.labels,
                     },
+                    schema: entity.data.schema,
                     reported_state: entity.data.reported_state,
                     desired_state: entity.data.desired_state,
                     synthetic_state: entity.data.synthetic_state,

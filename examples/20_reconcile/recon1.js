@@ -18,3 +18,4 @@ function flagLabel(key, state) {
 
 // check over temp
 flagLabel("overTemp", newState?.reportedState?.temperature?.value > 60);
+flagLabel("highTemp", newState?.reportedState?.temperature?.value > 50);

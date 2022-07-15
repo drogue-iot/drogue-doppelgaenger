@@ -3,10 +3,11 @@ use crate::Instance;
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use drogue_doppelgaenger_core::listener::KafkaSource;
+use drogue_doppelgaenger_core::service::JsonPatchUpdater;
 use drogue_doppelgaenger_core::{
     model::{Reconciliation, Thing},
     notifier::Notifier,
-    service::{Id, ReportedStateUpdater, Service},
+    service::{Id, Patch, ReportedStateUpdater, Service},
     storage::Storage,
 };
 use serde_json::{json, Value};
@@ -39,6 +40,20 @@ pub async fn things_update<S: Storage, N: Notifier>(
     let payload = payload.into_inner();
 
     service.update(Id { application, thing }, payload).await?;
+
+    Ok(HttpResponse::NoContent().json(json!({})))
+}
+
+pub async fn things_patch<S: Storage, N: Notifier>(
+    service: web::Data<Service<S, N>>,
+    path: web::Path<Id>,
+    payload: web::Json<Patch>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let payload = payload.into_inner();
+
+    service
+        .update(path.into_inner(), JsonPatchUpdater(payload))
+        .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }
