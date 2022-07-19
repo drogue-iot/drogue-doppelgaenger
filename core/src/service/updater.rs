@@ -7,27 +7,55 @@ use std::collections::BTreeMap;
 
 pub use json_patch::Patch;
 
-pub struct ReportedStateUpdater(pub BTreeMap<String, Value>);
+pub enum UpdateMode {
+    Merge,
+    Replace,
+}
+
+pub struct ReportedStateUpdater(pub BTreeMap<String, Value>, pub UpdateMode);
 
 impl InfallibleUpdater for ReportedStateUpdater {
     fn update(self, mut thing: Thing) -> Thing {
-        for (key, value) in self.0 {
-            match thing.reported_state.entry(key) {
-                Entry::Occupied(mut e) => {
-                    let e = e.get_mut();
-                    if e.value != value {
-                        e.value = value;
-                        e.last_update = Utc::now();
+        match self.1 {
+            // merge new data into current, update timestamps when the value has indeed changed
+            UpdateMode::Merge => {
+                for (key, value) in self.0 {
+                    match thing.reported_state.entry(key) {
+                        Entry::Occupied(mut e) => {
+                            let e = e.get_mut();
+                            if e.value != value {
+                                e.value = value;
+                                e.last_update = Utc::now();
+                            }
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(ReportedFeature::now(value));
+                        }
                     }
                 }
-                Entry::Vacant(e) => {
-                    e.insert(ReportedFeature {
-                        value,
-                        last_update: Utc::now(),
-                    });
+            }
+            // the new data set is the new state, but update timestamps only when the old
+            // data differed from the newly provided.
+            UpdateMode::Replace => {
+                let mut new_state = BTreeMap::new();
+                for (key, value) in self.0 {
+                    match thing.reported_state.remove_entry(&key) {
+                        Some((key, feature)) => {
+                            if feature.value == value {
+                                new_state.insert(key, feature);
+                            } else {
+                                new_state.insert(key, ReportedFeature::now(value));
+                            }
+                        }
+                        None => {
+                            new_state.insert(key, ReportedFeature::now(value));
+                        }
+                    }
                 }
+                thing.reported_state = new_state;
             }
         }
+
         thing
     }
 }

@@ -12,10 +12,19 @@ use crate::model::Thing;
 use crate::notifier::Notifier;
 use crate::storage::{self, Storage};
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct Config<S: Storage, N: Notifier> {
     pub storage: S::Config,
     pub notifier: N::Config,
+}
+
+impl<S: Storage, N: Notifier> Clone for Config<S, N> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            notifier: self.notifier.clone(),
+        }
+    }
 }
 
 pub struct Service<S: Storage, N: Notifier> {

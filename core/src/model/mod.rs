@@ -180,6 +180,16 @@ pub struct ReportedFeature {
     pub value: Value,
 }
 
+impl ReportedFeature {
+    /// Create a new reported feature with the provided value and "now" as timestamp.
+    pub fn now(value: Value) -> Self {
+        Self {
+            value,
+            last_update: Utc::now(),
+        }
+    }
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
 )]

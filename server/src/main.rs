@@ -1,14 +1,22 @@
+mod injector;
+
 #[macro_use]
 extern crate diesel_migrations;
 
 use actix_web::{middleware::Logger, App, HttpServer};
 use anyhow::anyhow;
+use drogue_doppelgaenger_core::config::kafka::KafkaProperties;
+use drogue_doppelgaenger_core::processor::source::EventStream;
+use drogue_doppelgaenger_core::processor::{source, Processor};
+use drogue_doppelgaenger_core::service::Service;
 use drogue_doppelgaenger_core::{
     app::run_main, config::ConfigFromEnv, notifier::kafka, service, storage::postgres,
 };
 use futures::{FutureExt, TryFutureExt};
-use rdkafka::admin::{AdminOptions, NewTopic, TopicReplication};
-use rdkafka::{admin::AdminClient, config::FromClientConfig};
+use rdkafka::{
+    admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
+    config::FromClientConfig,
+};
 use tokio::runtime::Handle;
 
 embed_migrations!("../database-migration/migrations");
@@ -18,8 +26,15 @@ pub struct Server {
     #[serde(default)]
     application: Option<String>,
     db: deadpool_postgres::Config,
+    /// sink for change events
     kafka_sink: kafka::Config,
+    /// source for change events
     kafka_source: kafka::Config,
+    /// source for device events
+    event_source: source::kafka::Config,
+    /// optional injector
+    #[serde(default)]
+    injector: Option<injector::Config>,
 }
 
 mod default {
@@ -54,9 +69,8 @@ pub async fn run_migrations(db: &deadpool_postgres::Config) -> anyhow::Result<()
     Ok(())
 }
 
-async fn create_topic(config: &kafka::Config) -> anyhow::Result<()> {
-    let topic = config.topic.clone();
-    let config: rdkafka::ClientConfig = config.clone().into();
+async fn create_topic(config: KafkaProperties, topic: String) -> anyhow::Result<()> {
+    let config: rdkafka::ClientConfig = config.into();
     let client = AdminClient::from_config(&config)?;
 
     client
@@ -77,21 +91,35 @@ async fn main() -> anyhow::Result<()> {
     let server = Server::from_env()?;
 
     run_migrations(&server.db).await.unwrap();
-    create_topic(&server.kafka_sink).await.unwrap();
+    create_topic(
+        KafkaProperties(server.kafka_sink.properties.clone()),
+        server.kafka_sink.topic.clone(),
+    )
+    .await
+    .unwrap();
+    create_topic(
+        KafkaProperties(server.event_source.properties.clone()),
+        server.event_source.topic.clone(),
+    )
+    .await
+    .unwrap();
 
-    let backend = drogue_doppelgaenger_backend::Config::<postgres::Storage, kafka::Notifier> {
-        application: server.application.clone(),
-        service: service::Config {
-            storage: postgres::Config {
-                application: server.application,
-                postgres: server.db,
-            },
-            notifier: server.kafka_sink,
+    let service = service::Config {
+        storage: postgres::Config {
+            application: server.application.clone(),
+            postgres: server.db,
         },
+        notifier: server.kafka_sink,
+    };
+    let backend = drogue_doppelgaenger_backend::Config::<postgres::Storage, kafka::Notifier> {
+        application: server.application,
+        service: service.clone(),
         listener: server.kafka_source,
     };
 
     let configurator = drogue_doppelgaenger_backend::configure(backend)?;
+
+    // prepare the http server
 
     let http = HttpServer::new(move || {
         App::new()
@@ -103,5 +131,23 @@ async fn main() -> anyhow::Result<()> {
     .map_err(|err| anyhow!(err))
     .boxed_local();
 
-    run_main([http]).await
+    // prepare the incoming events processor
+
+    let mut tasks = vec![];
+
+    let (source, sink) = source::kafka::EventStream::new(server.event_source)?;
+
+    if let Some(injector) = server.injector {
+        log::info!("Running injector: {injector:?}");
+        tasks.push(injector.run(sink.clone()).boxed_local());
+    }
+
+    let service = Service::new(service)?;
+    let processor = Processor::new(service, source).run().boxed_local();
+
+    tasks.extend([http, processor]);
+
+    // run the main loop
+
+    run_main(tasks).await
 }
