@@ -5,6 +5,7 @@ pub mod listener;
 pub mod machine;
 pub mod model;
 pub mod notifier;
+pub mod processor;
 pub mod service;
 pub mod storage;
 pub mod version;

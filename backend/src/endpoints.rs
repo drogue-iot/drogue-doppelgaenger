@@ -3,7 +3,7 @@ use crate::Instance;
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use drogue_doppelgaenger_core::listener::KafkaSource;
-use drogue_doppelgaenger_core::service::JsonPatchUpdater;
+use drogue_doppelgaenger_core::service::{JsonPatchUpdater, UpdateMode};
 use drogue_doppelgaenger_core::{
     model::{Reconciliation, Thing},
     notifier::Notifier,
@@ -66,7 +66,10 @@ pub async fn things_update_reported_state<S: Storage, N: Notifier>(
     let payload = payload.into_inner();
 
     service
-        .update(path.into_inner(), ReportedStateUpdater(payload))
+        .update(
+            path.into_inner(),
+            ReportedStateUpdater(payload, UpdateMode::Merge),
+        )
         .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))

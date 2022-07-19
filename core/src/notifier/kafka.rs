@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::kafka::KafkaProperties;
 use crate::model::Metadata;
 use crate::notifier;
 use async_trait::async_trait;
@@ -30,18 +31,6 @@ pub struct Event {
     pub id: Id,
 }
 
-impl From<Config> for rdkafka::ClientConfig {
-    fn from(cfg: Config) -> Self {
-        let mut result = rdkafka::ClientConfig::new();
-
-        for (k, v) in cfg.properties {
-            result.set(k.replace('_', "."), v);
-        }
-
-        result
-    }
-}
-
 pub struct Notifier {
     producer: FutureProducer,
     topic: String,
@@ -70,7 +59,7 @@ impl super::Notifier for Notifier {
     fn new(config: &Self::Config) -> anyhow::Result<Self> {
         let topic = config.topic.clone();
         let timeout = Timeout::After(config.timeout);
-        let config: rdkafka::ClientConfig = config.clone().into();
+        let config: rdkafka::ClientConfig = KafkaProperties(config.properties.clone()).into();
         let producer = FutureProducer::from_config(&config)?;
 
         Ok(Self {

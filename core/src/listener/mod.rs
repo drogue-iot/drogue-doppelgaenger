@@ -1,5 +1,6 @@
 //! This needs restructuring
 
+use crate::config::kafka::KafkaProperties;
 use crate::{model::Thing, notifier::kafka, service::Id};
 use anyhow::Context;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -75,9 +76,9 @@ impl KafkaSource {
     pub fn new(config: kafka::Config) -> anyhow::Result<Self> {
         log::info!("Starting Kafka event source: {config:?}");
 
-        let topic = config.topic.clone();
+        let topic = config.topic;
 
-        let config: rdkafka::ClientConfig = config.into();
+        let config: rdkafka::ClientConfig = KafkaProperties(config.properties).into();
         let consumer: StreamConsumer = config.create().context("Creating consumer")?;
 
         consumer.subscribe(&[&topic]).context("Start subscribe")?;
