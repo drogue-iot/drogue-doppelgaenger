@@ -1,3 +1,4 @@
+use crate::processor::Event;
 use base64::STANDARD;
 use base64_serde::base64_serde_type;
 use chrono::{DateTime, Utc};
@@ -5,9 +6,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// The full thing model.
-#[derive(
-    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Thing {
     pub metadata: Metadata,
@@ -22,6 +21,10 @@ pub struct Thing {
 
     #[serde(default, skip_serializing_if = "Reconciliation::is_empty")]
     pub reconciliation: Reconciliation,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub internal: Option<Internal>,
 }
 
 impl Thing {
@@ -43,6 +46,7 @@ impl Thing {
             desired_state: Default::default(),
             synthetic_state: Default::default(),
             reconciliation: Default::default(),
+            internal: None,
         }
     }
 }
@@ -167,7 +171,18 @@ impl Reconciliation {
     Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "camelCase")]
-pub enum Changed {
+pub struct Changed {
+    #[serde(flatten)]
+    pub code: Code,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub last_log: Vec<String>,
+}
+
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum Code {
     Script(String),
 }
 
@@ -224,6 +239,15 @@ pub enum Script {
         #[schemars(with = "String")]
         Vec<u8>,
     ),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Internal {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wakeup: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outbox: Vec<Event>,
 }
 
 #[cfg(test)]

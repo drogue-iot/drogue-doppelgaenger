@@ -73,6 +73,7 @@ impl InfallibleUpdater for Thing {
     }
 }
 
+/// Updater for JSON patch
 pub struct JsonPatchUpdater(pub Patch);
 
 #[derive(Debug, thiserror::Error)]
@@ -89,6 +90,23 @@ impl Updater for JsonPatchUpdater {
     fn update(self, thing: Thing) -> Result<Thing, Self::Error> {
         let mut json = serde_json::to_value(thing)?;
         json_patch::patch(&mut json, &self.0)?;
+        Ok(serde_json::from_value(json)?)
+    }
+}
+
+/// Updater for JSON merge
+pub struct JsonMergeUpdater(pub Value);
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct MergeError(#[from] serde_json::Error);
+
+impl Updater for JsonMergeUpdater {
+    type Error = MergeError;
+
+    fn update(self, thing: Thing) -> Result<Thing, Self::Error> {
+        let mut json = serde_json::to_value(thing)?;
+        json_patch::merge(&mut json, &self.0);
         Ok(serde_json::from_value(json)?)
     }
 }

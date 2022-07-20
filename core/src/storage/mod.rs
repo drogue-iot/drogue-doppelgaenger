@@ -2,7 +2,6 @@ pub mod postgres;
 
 use crate::model::Thing;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use std::fmt::Debug;
 use std::future::Future;
 
@@ -40,22 +39,17 @@ pub trait Storage: Sized + Send + Sync + 'static {
     fn new(config: &Self::Config) -> anyhow::Result<Self>;
 
     async fn get(&self, application: &str, name: &str) -> Result<Thing, Error<Self::Error>>;
-    async fn create(&self, thing: &Thing) -> Result<(), Error<Self::Error>>;
-    async fn update(&self, thing: &Thing) -> Result<(), Error<Self::Error>>;
+    async fn create(&self, thing: Thing) -> Result<Thing, Error<Self::Error>>;
+    async fn update(&self, thing: Thing) -> Result<Thing, Error<Self::Error>>;
     async fn patch<F, Fut, E>(
         &self,
         application: &str,
         name: &str,
         f: F,
-    ) -> Result<(), UpdateError<Self::Error, E>>
+    ) -> Result<Thing, UpdateError<Self::Error, E>>
     where
         F: FnOnce(Thing) -> Fut + Send + Sync,
         Fut: Future<Output = Result<Thing, E>> + Send + Sync,
         E: Send + Sync;
     async fn delete(&self, application: &str, name: &str) -> Result<(), Error<Self::Error>>;
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Internal {
-    pub wakeup: Option<DateTime<Utc>>,
 }

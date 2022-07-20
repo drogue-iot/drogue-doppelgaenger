@@ -115,9 +115,12 @@ async fn main() -> anyhow::Result<()> {
         application: server.application,
         service: service.clone(),
         listener: server.kafka_source,
+        // FIXME: put into service config
+        sink: server.event_source.clone(),
     };
 
-    let configurator = drogue_doppelgaenger_backend::configure(backend)?;
+    let (configurator, runner) =
+        drogue_doppelgaenger_backend::configure::<_, _, source::kafka::Sink>(backend)?;
 
     // prepare the http server
 
@@ -133,7 +136,7 @@ async fn main() -> anyhow::Result<()> {
 
     // prepare the incoming events processor
 
-    let mut tasks = vec![];
+    let mut tasks = vec![runner];
 
     let (source, sink) = source::kafka::EventStream::new(server.event_source)?;
 
@@ -142,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
         tasks.push(injector.run(sink.clone()).boxed_local());
     }
 
-    let service = Service::new(service)?;
+    let service = Service::new(service, sink)?;
     let processor = Processor::new(service, source).run().boxed_local();
 
     tasks.extend([http, processor]);

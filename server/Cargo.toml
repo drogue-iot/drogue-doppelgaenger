@@ -9,6 +9,7 @@ license = "Apache-2.0"
 [dependencies]
 actix-web = "4"
 anyhow = "1"
+chrono = "0.4"
 dotenv = "0.15"
 env_logger = "0.9"
 futures = "0.3"
@@ -33,3 +34,8 @@ postgres-native-tls = { version = "0.5" }
 tokio-postgres = { version = "0.7", features = ["runtime", "with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
 diesel = { version = "1.4", features = ["postgres"] }
 diesel_migrations = { version = "1.4", features = ["postgres"] }
+
+
+[features]
+default = ["console-metrics"]
+console-metrics = ["drogue-doppelgaenger-core/console-metrics"]

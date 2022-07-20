@@ -74,7 +74,7 @@ impl super::Notifier for Notifier {
             application, name, ..
         } = &thing.metadata;
 
-        log::info!("Notify change - {application} / {name}");
+        log::debug!("Notify change - {application} / {name}");
 
         let headers = OwnedHeaders::new()
             .add("application", application)
@@ -90,7 +90,7 @@ impl super::Notifier for Notifier {
 
         match self.producer.send(msg, self.timeout).await {
             Ok(r) => {
-                log::info!("Notification sent: {r:?}");
+                log::debug!("Notification sent: {r:?}");
                 Ok(())
             }
             Err((err, _)) => Err(notifier::Error::Sender(Error::Kafka(err))),

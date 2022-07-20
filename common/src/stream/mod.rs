@@ -14,15 +14,13 @@ use rdkafka::{
     consumer::{stream_consumer::StreamConsumer, Consumer, DefaultConsumerContext},
     error::KafkaResult,
     message::BorrowedMessage,
-    util::Timeout,
-    Message, TopicPartitionList,
+    Message,
 };
 use std::{
     fmt::{Debug, Formatter},
     marker::PhantomData,
     ops::{Deref, DerefMut},
     pin::Pin,
-    time::Duration,
 };
 use uuid::Uuid;
 
@@ -140,50 +138,6 @@ where
         // return result
 
         config
-    }
-
-    /// Create a new message spy without using group management
-    ///
-    /// This is currently blocked by: https://github.com/edenhill/librdkafka/issues/3261
-    #[allow(dead_code)]
-    fn new_without_group(cfg: &EventStreamConfig) -> Result<Self, EventStreamError> {
-        let mut consumer = Self::new_config(cfg);
-
-        // FIXME: don't use non-group with commits
-        Ack::configure(&mut consumer);
-
-        let consumer: StreamConsumer<DefaultConsumerContext> = consumer.create()?;
-
-        log::debug!("Created consumer");
-
-        let topic = cfg.kafka.topic.clone();
-
-        let metadata =
-            consumer.fetch_metadata(Some(&topic), Timeout::After(Duration::from_secs(10)))?;
-
-        let partitions = metadata
-            .topics()
-            .iter()
-            .find(|t| t.name() == topic)
-            .map(|topic| topic.partitions())
-            .ok_or_else(|| {
-                log::debug!("Failed to find metadata for topic");
-                EventStreamError::MissingMetadata
-            })?;
-
-        log::debug!("Topic has {} partitions", partitions.len());
-
-        let mut assignment = TopicPartitionList::with_capacity(partitions.len());
-        for part in partitions {
-            log::debug!("Adding partition: {}", part.id());
-            assignment.add_partition(&topic, part.id());
-        }
-
-        consumer.assign(&assignment)?;
-
-        log::debug!("Subscribed");
-
-        Ok(Self::wrap(topic, consumer))
     }
 
     fn new_with_group(cfg: &EventStreamConfig, group_id: String) -> Result<Self, EventStreamError> {

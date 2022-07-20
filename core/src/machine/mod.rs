@@ -1,7 +1,8 @@
 mod deno;
 
 use crate::machine::deno::DenoOptions;
-use crate::model::{Changed, JsonSchema, Metadata, Schema, Thing, ThingState};
+use crate::model::{Code, JsonSchema, Metadata, Schema, Thing, ThingState};
+use crate::processor::Message;
 use anyhow::anyhow;
 use deno_core::url::Url;
 use jsonschema::{Draft, JSONSchema, SchemaResolver, SchemaResolverError};
@@ -27,12 +28,17 @@ pub struct Machine {
     thing: Thing,
 }
 
+pub struct Outcome {
+    pub new_thing: Thing,
+    pub outbox: Vec<OutboxMessage>,
+}
+
 impl Machine {
     pub fn new(thing: Thing) -> Self {
         Self { thing }
     }
 
-    pub async fn create(new_thing: Thing) -> Result<Thing, Error> {
+    pub async fn create(new_thing: Thing) -> Result<Outcome, Error> {
         // Creating means that we start with an empty thing, and then set the initial state.
         // This allows to run through the reconciliation initially.
         Self::new(Thing::new(
@@ -43,7 +49,7 @@ impl Machine {
         .await
     }
 
-    pub async fn update<F, Fut, E>(self, f: F) -> Result<Thing, Error>
+    pub async fn update<F, Fut, E>(self, f: F) -> Result<Outcome, Error>
     where
         F: FnOnce(Thing) -> Fut,
         Fut: Future<Output = Result<Thing, E>>,
@@ -63,17 +69,20 @@ impl Machine {
 
         // start with original state
 
-        let original_state = Arc::new(self.thing);
+        let original_thing = Arc::new(self.thing);
+        log::debug!("Original state: {original_thing:?}");
 
         // apply the update
 
-        let new_state = f((*original_state).clone())
+        let new_thing = f((*original_thing).clone())
             .await
             .map_err(|err| Error::Mutator(Box::new(err)))?;
 
+        log::debug!("New state (post-update: {new_thing:?}");
+
         // validate the outcome
 
-        match &new_state.schema {
+        match &new_thing.schema {
             Some(Schema::Json(schema)) => match schema {
                 JsonSchema::Draft7(schema) => {
                     let compiled = JSONSchema::options()
@@ -84,7 +93,7 @@ impl Machine {
                             Error::Validation(anyhow!("Failed to compile schema: {err}"))
                         })?;
 
-                    let state: ThingState = (&new_state).into();
+                    let state: ThingState = (&new_thing).into();
 
                     if !compiled.is_valid(&serde_json::to_value(&state).map_err(|err| {
                         Error::Internal(
@@ -100,13 +109,17 @@ impl Machine {
             None => {}
         }
 
+        log::debug!("New state (post-validate: {new_thing:?}");
+
         // reconcile the result
 
-        let new_state = reconcile(original_state, new_state).await?;
+        let Outcome { new_thing, outbox } = reconcile(original_thing, new_thing).await?;
+
+        log::debug!("New state (post-reconcile: {new_thing:?}");
 
         // reapply the captured metadata
 
-        let new_state = Thing {
+        let new_thing = Thing {
             metadata: Metadata {
                 name,
                 application,
@@ -114,26 +127,47 @@ impl Machine {
                 creation_timestamp,
                 generation,
                 resource_version,
-                ..new_state.metadata
+                ..new_thing.metadata
             },
-            ..new_state
+            ..new_thing
         };
 
         // done
 
-        Ok(new_state)
+        Ok(Outcome { new_thing, outbox })
     }
 }
 
-async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Thing, Error> {
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OutboxMessage {
+    pub thing: String,
+    pub message: Message,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Outgoing {
+    pub new_thing: Thing,
+    pub outbox: Vec<OutboxMessage>,
+    pub log: Vec<String>,
+}
+
+async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Outcome, Error> {
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(1);
+
+    // clear old logs first, otherwise logging of state will continously grow
+    // FIXME: remove when we only send a view of the state to the reconcile code
+    for (_, v) in &mut new_thing.reconciliation.changed {
+        v.last_log.clear();
+    }
 
     let reconciliations = new_thing.reconciliation.clone();
 
+    let mut outbox = Vec::<OutboxMessage>::new();
+
     for (name, changed) in reconciliations.changed {
-        match changed {
-            Changed::Script(script) => {
-                new_thing = deno::run(
+        match changed.code {
+            Code::Script(script) => {
+                let outgoing = deno::run(
                     format!("reconcile-changed-{}", name),
                     script,
                     current_thing.clone(),
@@ -142,11 +176,17 @@ async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Th
                 )
                 .await
                 .map_err(Error::Reconcile)?;
+
+                new_thing = outgoing.new_thing;
+                if let Some(rec) = new_thing.reconciliation.changed.get_mut(&name) {
+                    rec.last_log = outgoing.log;
+                }
+                outbox.extend(outgoing.outbox);
             }
         }
     }
 
-    Ok(new_thing)
+    Ok(Outcome { new_thing, outbox })
 }
 
 pub struct RejectResolver;
@@ -166,7 +206,7 @@ mod test {
 
     #[tokio::test]
     async fn test_create() {
-        let thing = Machine::create(test_thing()).await.unwrap();
+        let Outcome { new_thing, outbox } = Machine::create(test_thing()).await.unwrap();
 
         assert_eq!(
             Thing {
@@ -176,8 +216,9 @@ mod test {
                 desired_state: Default::default(),
                 synthetic_state: Default::default(),
                 reconciliation: Default::default(),
+                internal: None
             },
-            thing
+            new_thing
         );
     }
 
@@ -185,7 +226,7 @@ mod test {
     async fn test_update_simple_1() {
         let last_update = Utc::now();
         let machine = Machine::new(test_thing());
-        let thing = machine
+        let Outcome { new_thing, outbox } = machine
             .update(|mut thing| async {
                 thing.reported_state.insert(
                     "temperature".to_string(),
@@ -217,8 +258,9 @@ mod test {
                 desired_state: Default::default(),
                 synthetic_state: Default::default(),
                 reconciliation: Default::default(),
+                internal: None
             },
-            thing
+            new_thing
         );
     }
 

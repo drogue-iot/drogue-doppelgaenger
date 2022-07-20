@@ -2,6 +2,7 @@ use super::{CLIENT_TIMEOUT, HEARTBEAT_INTERVAL};
 use crate::notifier::{Request, Response};
 use actix::{Actor, ActorContext, AsyncContext, Handler, SpawnHandle, StreamHandler, WrapFuture};
 use actix_web_actors::ws::{self, CloseCode, CloseReason};
+use drogue_doppelgaenger_core::processor::source::Sink;
 use drogue_doppelgaenger_core::{
     listener::{KafkaSource, Message},
     notifier::Notifier,
@@ -31,19 +32,19 @@ mod message {
     pub struct Close(pub Option<CloseReason>);
 }
 
-pub struct WebSocketHandler<S: Storage, N: Notifier> {
+pub struct WebSocketHandler<S: Storage, N: Notifier, Si: Sink> {
     heartbeat: Instant,
     listeners: HashMap<Id, SpawnHandle>,
-    service: Arc<Service<S, N>>,
+    service: Arc<Service<S, N, Si>>,
     source: Arc<KafkaSource>,
     application: String,
     /// Whether or not to just subscribe for a single thing
     thing: Option<String>,
 }
 
-impl<S: Storage, N: Notifier> WebSocketHandler<S, N> {
+impl<S: Storage, N: Notifier, Si: Sink> WebSocketHandler<S, N, Si> {
     pub fn new(
-        service: Arc<Service<S, N>>,
+        service: Arc<Service<S, N, Si>>,
         source: Arc<KafkaSource>,
         application: String,
         thing: Option<String>,
@@ -103,7 +104,7 @@ impl<S: Storage, N: Notifier> WebSocketHandler<S, N> {
     }
 }
 
-impl<S: Storage, N: Notifier> Actor for WebSocketHandler<S, N> {
+impl<S: Storage, N: Notifier, Si: Sink> Actor for WebSocketHandler<S, N, Si> {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
@@ -124,8 +125,8 @@ impl<S: Storage, N: Notifier> Actor for WebSocketHandler<S, N> {
 }
 
 // Handle incoming messages from the Websocket Client
-impl<S: Storage, N: Notifier> StreamHandler<Result<ws::Message, ws::ProtocolError>>
-    for WebSocketHandler<S, N>
+impl<S: Storage, N: Notifier, Si: Sink> StreamHandler<Result<ws::Message, ws::ProtocolError>>
+    for WebSocketHandler<S, N, Si>
 {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
@@ -159,7 +160,7 @@ impl<S: Storage, N: Notifier> StreamHandler<Result<ws::Message, ws::ProtocolErro
     }
 }
 
-impl<S: Storage, N: Notifier> Handler<message::Subscribe> for WebSocketHandler<S, N> {
+impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Subscribe> for WebSocketHandler<S, N, Si> {
     type Result = ();
 
     fn handle(&mut self, msg: message::Subscribe, ctx: &mut Self::Context) -> Self::Result {
@@ -218,7 +219,9 @@ impl<S: Storage, N: Notifier> Handler<message::Subscribe> for WebSocketHandler<S
     }
 }
 
-impl<S: Storage, N: Notifier> Handler<message::Unsubscribe> for WebSocketHandler<S, N> {
+impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Unsubscribe>
+    for WebSocketHandler<S, N, Si>
+{
     type Result = ();
 
     fn handle(&mut self, msg: message::Unsubscribe, ctx: &mut Self::Context) -> Self::Result {
@@ -232,7 +235,7 @@ impl<S: Storage, N: Notifier> Handler<message::Unsubscribe> for WebSocketHandler
     }
 }
 
-impl<S: Storage, N: Notifier> Handler<message::Event> for WebSocketHandler<S, N> {
+impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Event> for WebSocketHandler<S, N, Si> {
     type Result = Result<(), serde_json::Error>;
 
     fn handle(&mut self, msg: message::Event, ctx: &mut Self::Context) -> Self::Result {
@@ -240,7 +243,7 @@ impl<S: Storage, N: Notifier> Handler<message::Event> for WebSocketHandler<S, N>
     }
 }
 
-impl<S: Storage, N: Notifier> Handler<message::Close> for WebSocketHandler<S, N> {
+impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Close> for WebSocketHandler<S, N, Si> {
     type Result = ();
 
     fn handle(&mut self, msg: message::Close, ctx: &mut Self::Context) -> Self::Result {
