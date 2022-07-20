@@ -74,6 +74,10 @@ class Thing {
         socket.close();
     }
 
+    dispose() {
+        this.#disconnect();
+    }
+
     #reconnect() {
         // if we had a socket and are not already connecting
         if (this.#socket && !this.#connecting) {
@@ -94,7 +98,8 @@ class Thing {
     }
 
     #unsubscribe(handle) {
-        this.#subscriptions.delete(handle);
+        let result = this.#subscriptions.delete(handle);
+        console.debug("Removed: ${result}")
     }
 
     #notifyAll(event) {
@@ -117,7 +122,7 @@ class ThingSubscription {
         this.#callback(event);
     }
 
-    destroy() {
+    dispose() {
         if (this.#destroyer !== undefined) {
             this.#destroyer();
             this.#destroyer = undefined;
@@ -137,6 +142,7 @@ class ThingCard {
                 showTimestamps: false,
                 labelsToCardStyle: (labels) => {},
                 labelsToPropertyStyle: (labels, propertyName) => {},
+                refClicked: (ref) => {},
             }, ...options
         };
         this.connected = false;
@@ -147,8 +153,10 @@ class ThingCard {
         })
     }
 
-    destroy() {
-        this.#subscription.destroy();
+    dispose() {
+        if (this.#subscription !== undefined) {
+            this.#subscription.dispose();
+        }
     }
 
     #setState(event) {
@@ -173,6 +181,11 @@ class ThingCard {
     }
 
     #render() {
+        if (this.#card === undefined) {
+            console.debug("Invalid card target for", this.thing)
+            return;
+        }
+
         const labels = this.state?.metadata?.labels || {};
 
         if (this.connected) {
@@ -218,43 +231,94 @@ class ThingCard {
             element = $(element);
             const name = element.data("drogue-thing-reported-state");
             const value = this.state.reportedState?.[name];
-            const unit = element.find("[data-drogue-thing-render-unit]").data("drogue-thing-render-unit");
 
-            const lastUpdate = makeDate(value?.lastUpdate);
+            const renderValue = element.find("[data-drogue-thing-render-value]");
+            if (renderValue.length) {
 
-            let classes = "list-group-item d-flex ";
-            if (value !== undefined) {
-                const style = this.options.labelsToPropertyStyle(labels, name);
-                switch (style) {
-                    case "error": {
-                        classes += "list-group-item-danger";
-                        break;
+                const unit = element.find("[data-drogue-thing-render-unit]").data("drogue-thing-render-unit");
+                const lastUpdate = makeDate(value?.lastUpdate);
+
+                let classes = "list-group-item d-flex ";
+                if (value !== undefined) {
+                    const style = this.options.labelsToPropertyStyle(labels, name);
+                    switch (style) {
+                        case "error": {
+                            classes += "list-group-item-danger";
+                            break;
+                        }
+                        case "warning": {
+                            classes += "list-group-item-warning";
+                            break;
+                        }
                     }
-                    case "warning": {
-                        classes += "list-group-item-warning";
-                        break;
-                    }
+                } else {
+                    classes += "list-group-item-secondary";
                 }
-            } else {
-                classes += "list-group-item-secondary";
+
+                element.attr('class', classes);
+
+                let content;
+                if (value !== undefined) {
+                    content = $(`<span>${value?.value}</span>`);
+                    if (unit !== undefined) {
+                        content.append(unit);
+                    }
+                    if (this.options.showTimestamps) {
+                        content.append($(`<small class="text-muted">(${lastUpdate?.toISOString()})</small>`))
+                    }
+                } else {
+                    content = $(`<i>unknown</i>`);
+                }
+
+                renderValue.html(content);
             }
 
-            element.attr('class', classes);
+            const renderRefs = element.find("[data-drogue-thing-render-refs]");
+            if (renderRefs.length) {
+                const lastUpdate = makeDate(value?.lastUpdate);
 
-            let content;
-            if (value !== undefined) {
-                content = $(`<span>${value?.value}</span>`);
-                if (unit !== undefined) {
-                    content.append(unit);
+                let classes = "list-group-item d-flex ";
+                if (value !== undefined) {
+                    const style = this.options.labelsToPropertyStyle(labels, name);
+                    switch (style) {
+                        case "error": {
+                            classes += "list-group-item-danger";
+                            break;
+                        }
+                        case "warning": {
+                            classes += "list-group-item-warning";
+                            break;
+                        }
+                    }
+                } else {
+                    classes += "list-group-item-secondary";
                 }
-                if (this.options.showTimestamps) {
-                    content.append($(`<small class="text-muted">(${lastUpdate?.toISOString()})</small>`))
+
+                element.attr('class', classes);
+
+                let content;
+                if (value?.value) {
+                    content = $(`<ul class="drogue-ref-group">`);
+                    for (const [ref, v] of Object.entries(value?.value)) {
+                        const link = $(`<a class="drogue-thing-ref">${ref}</a>`);
+                        link.on("click", ()=> {
+                            console.debug("Clicked: ", ref);
+                            this.options.refClicked(ref);
+                        });
+                        const item = $(`<li></li>`);
+                        item.append(link);
+                        content.append(item);
+                    }
+                    if (this.options.showTimestamps) {
+                        content.append($(`<small class="text-muted">(${lastUpdate?.toISOString()})</small>`))
+                    }
+                } else {
+                    content = $(`<i>none</i>`);
                 }
-            } else {
-                content = $(`<i>unknown</i>`);
+
+                renderRefs.html(content);
             }
 
-            element.find("[data-drogue-thing-render-value]").html(content);
 
         });
     }
