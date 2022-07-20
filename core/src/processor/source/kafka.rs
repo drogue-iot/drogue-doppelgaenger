@@ -97,7 +97,7 @@ impl super::Source for Source {
     async fn run<F, Fut>(self, mut f: F) -> anyhow::Result<()>
     where
         F: FnMut(Event) -> Fut + Send + Sync,
-        Fut: Future<Output = ()> + Send,
+        Fut: Future<Output = anyhow::Result<()>> + Send,
     {
         log::info!("Running event source loop...");
 
@@ -111,7 +111,10 @@ impl super::Source for Source {
                     match from_msg(&msg) {
                         Ok(event) => {
                             log::debug!("Processing event: {event:?}");
-                            f(event).await;
+                            if let Err(err) = f(event).await {
+                                log::error!("Handler failed: {err}");
+                                break;
+                            }
                         }
                         Err(err) => {
                             log::info!("Unable to parse message, skipping! Reason: {err}");
@@ -137,7 +140,7 @@ impl super::Source for Source {
 }
 
 /// Extract the ID (application, device) from the message.
-fn extract_id(msg: &BorrowedMessage) -> anyhow::Result<(String, String)> {
+fn extract_meta(msg: &BorrowedMessage) -> anyhow::Result<(String, String, String, String)> {
     let headers = match msg.headers() {
         Some(headers) => headers,
         None => {
@@ -145,11 +148,19 @@ fn extract_id(msg: &BorrowedMessage) -> anyhow::Result<(String, String)> {
         }
     };
 
+    let mut id = None;
+    let mut timestamp = None;
     let mut application = None;
     let mut device = None;
 
     for i in 0..headers.count() {
         match headers.get_as::<str>(i) {
+            Some(("id", Ok(value))) => {
+                id = Some(value);
+            }
+            Some(("timestamp", Ok(value))) => {
+                timestamp = Some(value);
+            }
             Some(("application", Ok(value))) => {
                 application = Some(value);
             }
@@ -161,6 +172,11 @@ fn extract_id(msg: &BorrowedMessage) -> anyhow::Result<(String, String)> {
     }
 
     Ok((
+        id.ok_or_else(|| anyhow!("Missing 'id' header"))?
+            .to_string(),
+        timestamp
+            .ok_or_else(|| anyhow!("Missing 'timestamp' header"))?
+            .to_string(),
         application
             .ok_or_else(|| anyhow!("Missing 'application' header"))?
             .to_string(),
@@ -172,11 +188,13 @@ fn extract_id(msg: &BorrowedMessage) -> anyhow::Result<(String, String)> {
 
 /// Parse a Kafka message into an [`Event`].
 fn from_msg(msg: &BorrowedMessage) -> anyhow::Result<Event> {
-    let (application, device) = extract_id(msg)?;
+    let (id, timestamp, application, device) = extract_meta(msg)?;
 
     let message = serde_json::from_slice(msg.payload().ok_or_else(|| anyhow!("Missing payload"))?)?;
 
     Ok(Event {
+        id,
+        timestamp: timestamp.parse()?,
         application,
         device,
         message,
@@ -185,12 +203,14 @@ fn from_msg(msg: &BorrowedMessage) -> anyhow::Result<Event> {
 
 #[async_trait]
 impl super::Sink for Sink {
-    async fn publish(&mut self, event: Event) -> anyhow::Result<()> {
+    async fn publish(&self, event: Event) -> anyhow::Result<()> {
         let key = format!("{}/{}", event.application, event.device);
 
         let payload = serde_json::to_vec(&event.message)?;
 
         let headers = OwnedHeaders::new()
+            .add("id", &event.id)
+            .add("timestamp", &event.timestamp.to_rfc3339())
             .add("application", &event.application)
             .add("device", &event.device);
 

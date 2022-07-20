@@ -1,6 +1,8 @@
+use super::Outgoing;
 use crate::model::Thing;
-use anyhow::anyhow;
+use anyhow::bail;
 use deno_core::{serde_v8, v8, Extension, JsRuntime, RuntimeOptions};
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::time::Instant;
@@ -12,6 +14,8 @@ pub struct DenoOptions {
 
 const KEY_CURRENT_STATE: &str = "currentState";
 const KEY_NEW_STATE: &str = "newState";
+const KEY_OUTBOX: &str = "outbox";
+const KEY_LOGS: &str = "logs";
 
 /// Run a deno script
 ///
@@ -22,7 +26,7 @@ pub async fn run(
     current_thing: Arc<Thing>,
     new_thing: Thing,
     opts: DenoOptions,
-) -> anyhow::Result<Thing> {
+) -> anyhow::Result<Outgoing> {
     let thing = Handle::current()
         .spawn_blocking(move || {
             // disable some operations
@@ -81,28 +85,68 @@ fn set_context(
     let scope = &mut runtime.handle_scope();
     let global = global.open(scope).global(scope);
 
-    let current_key = serde_v8::to_v8(scope, KEY_CURRENT_STATE)?;
-    let current_value = serde_v8::to_v8(scope, current_state)?;
-    global.set(scope, current_key, current_value);
+    {
+        let key = serde_v8::to_v8(scope, KEY_CURRENT_STATE)?;
+        let value = serde_v8::to_v8(scope, current_state)?;
+        global.set(scope, key, value);
+    }
 
-    let new_key = serde_v8::to_v8(scope, KEY_NEW_STATE)?;
-    let new_value = serde_v8::to_v8(scope, new_state)?;
-    global.set(scope, new_key, new_value);
+    {
+        let key = serde_v8::to_v8(scope, KEY_NEW_STATE)?;
+        let value = serde_v8::to_v8(scope, new_state)?;
+        global.set(scope, key, value);
+    }
+
+    {
+        let key = serde_v8::to_v8(scope, KEY_OUTBOX)?;
+        let value = serde_v8::to_v8(scope, Vec::<Value>::new())?;
+        global.set(scope, key, value);
+    }
+
+    {
+        let key = serde_v8::to_v8(scope, KEY_LOGS)?;
+        let value = serde_v8::to_v8(scope, Vec::<Value>::new())?;
+        global.set(scope, key, value);
+    }
 
     Ok(())
 }
 
 /// Extract the new state from the context
-fn extract_context(runtime: &mut JsRuntime) -> anyhow::Result<Thing> {
+fn extract_context(runtime: &mut JsRuntime) -> anyhow::Result<Outgoing> {
     let global = runtime.global_context();
 
     let mut scope = &mut runtime.handle_scope();
 
     let global = global.open(scope).global(scope);
 
-    let key = serde_v8::to_v8(&mut scope, KEY_NEW_STATE)?;
-    match global.get(scope, key) {
-        Some(value) => Ok(serde_v8::from_v8(scope, value)?),
-        None => Err(anyhow!("Script removed new state")),
-    }
+    let new_thing = {
+        let key = serde_v8::to_v8(&mut scope, KEY_NEW_STATE)?;
+        match global.get(scope, key) {
+            Some(value) => serde_v8::from_v8(scope, value)?,
+            None => bail!("Script removed new state"),
+        }
+    };
+
+    let outbox = {
+        let key = serde_v8::to_v8(&mut scope, KEY_OUTBOX)?;
+        match global.get(scope, key) {
+            Some(value) => serde_v8::from_v8(scope, value)?,
+            None => vec![],
+        }
+    };
+
+    let log = {
+        let key = serde_v8::to_v8(&mut scope, KEY_LOGS)?;
+        match global.get(scope, key) {
+            Some(value) => serde_v8::from_v8(scope, value)?,
+            None => vec![],
+        }
+    };
+
+    Ok(Outgoing {
+        new_thing,
+        outbox,
+        log,
+    })
 }

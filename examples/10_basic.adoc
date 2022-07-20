@@ -41,3 +41,10 @@ http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedState tem
 ----
 http PATCH localhost:8080/api/v1alpha1/things/default/things/foo '[0][op]=replace' '[0][path]=/reportedState/temperature/value' '[0][value]=43'
 ----
+
+=== Remove an annotation
+
+[source,shell]
+----
+http PATCH localhost:8080/api/v1alpha1/things/default/things/foo '[0][op]=remove' '[0][path]=/metadata/annotations/condition~1FoverTemp'
+----

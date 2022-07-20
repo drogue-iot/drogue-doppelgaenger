@@ -21,3 +21,21 @@ http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedState tem
 ----
 
 Reset with a value below `60`.
+
+== Add as a reference
+
+[source,shell]
+----
+http POST localhost:8080/api/v1alpha1/things metadata:='{"name": "overTempGroup", "application": "default"}'
+----
+
+.recon1.js
+[source,javascript]
+----
+include::20_reconcile/recon2.js[]
+----
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliation 'changed[overTempGroup][script]=@20_reconcile/recon2.js'
+----

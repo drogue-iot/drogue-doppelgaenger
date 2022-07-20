@@ -1,13 +1,14 @@
-use crate::injector::PayloadMapper;
-use anyhow::{anyhow, bail, Context};
-use cloudevents::AttributesReader;
+use crate::injector::{
+    metadata::{Meta, MetadataMapper},
+    payload::PayloadMapper,
+};
+use anyhow::{bail, Context};
 use drogue_doppelgaenger_core::processor::{source::Sink, Event};
 use rumqttc::{
     AsyncClient, EventLoop, Incoming, MqttOptions, QoS, SubscribeReasonCode, TlsConfiguration,
     Transport,
 };
-use rustls::client::NoClientSessionStorage;
-use rustls::ClientConfig;
+use rustls::{client::NoClientSessionStorage, ClientConfig};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -38,8 +39,15 @@ mod default {
 }
 
 impl Config {
-    pub async fn run<S: Sink>(self, sink: S, mapper: PayloadMapper) -> anyhow::Result<()> {
-        Injector::new(self, sink, mapper)?.run().await
+    pub async fn run<S: Sink>(
+        self,
+        sink: S,
+        metadata_mapper: MetadataMapper,
+        payload_mapper: PayloadMapper,
+    ) -> anyhow::Result<()> {
+        Injector::new(self, sink, metadata_mapper, payload_mapper)?
+            .run()
+            .await
     }
 }
 
@@ -48,7 +56,9 @@ pub struct Injector<S: Sink> {
     events: EventLoop,
     sink: S,
     topic: String,
-    mapper: PayloadMapper,
+
+    metadata_mapper: MetadataMapper,
+    payload_mapper: PayloadMapper,
 }
 
 macro_rules! close_or_break {
@@ -61,7 +71,12 @@ macro_rules! close_or_break {
 }
 
 impl<S: Sink> Injector<S> {
-    pub fn new(config: Config, sink: S, mapper: PayloadMapper) -> anyhow::Result<Self> {
+    pub fn new(
+        config: Config,
+        sink: S,
+        metadata_mapper: MetadataMapper,
+        payload_mapper: PayloadMapper,
+    ) -> anyhow::Result<Self> {
         let mut opts = MqttOptions::new(
             config
                 .client_id
@@ -95,7 +110,8 @@ impl<S: Sink> Injector<S> {
             client,
             events,
             sink,
-            mapper,
+            metadata_mapper,
+            payload_mapper,
         })
     }
 
@@ -134,7 +150,7 @@ impl<S: Sink> Injector<S> {
                     }
                 }
                 Ok(rumqttc::Event::Incoming(Incoming::Publish(publish))) => {
-                    match build_event(&publish.payload, &self.mapper) {
+                    match self.build_event(&publish.payload) {
                         Ok(Some(event)) => {
                             log::debug!("Injecting event: {event:?}");
                             if let Err(err) = self.sink.publish(event).await {
@@ -166,33 +182,34 @@ impl<S: Sink> Injector<S> {
 
         Ok(())
     }
-}
 
-fn build_event(payload: &[u8], mapper: &PayloadMapper) -> anyhow::Result<Option<Event>> {
-    let mut event: cloudevents::Event = serde_json::from_slice(payload)?;
+    fn build_event(&self, payload: &[u8]) -> anyhow::Result<Option<Event>> {
+        let mut event: cloudevents::Event = serde_json::from_slice(payload)?;
 
-    log::debug!("Cloud Event: {event:?}");
+        log::debug!("Cloud Event: {event:?}");
 
-    if event.ty() != "io.drogue.event.v1" {
-        return Ok(None);
+        let Meta {
+            id,
+            timestamp,
+            application,
+            device,
+        } = match self.metadata_mapper.map(&event)? {
+            Some(meta) => meta,
+            None => {
+                return Ok(None);
+            }
+        };
+
+        let message = self.payload_mapper.map(event.take_data())?;
+
+        Ok(Some(Event {
+            id,
+            timestamp,
+            application,
+            device,
+            message,
+        }))
     }
-
-    let application = event
-        .extension("application")
-        .ok_or_else(|| anyhow!("Missing 'application' extension value"))?
-        .to_string();
-    let device = event
-        .extension("device")
-        .ok_or_else(|| anyhow!("Missing 'device' extension value"))?
-        .to_string();
-
-    let message = mapper.map(event.take_data())?;
-
-    Ok(Some(Event {
-        application,
-        device,
-        message,
-    }))
 }
 
 /// Setup TLS with RusTLS and system certificates.

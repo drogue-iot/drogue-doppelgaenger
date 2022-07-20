@@ -11,15 +11,12 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
-use tokio::runtime::Handle;
 use tokio::sync::broadcast::{channel, Sender};
-use tokio::task::JoinHandle;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 
 /// A notifier source using Kafka.
 pub struct KafkaSource {
-    task: JoinHandle<()>,
     inner: Arc<RwLock<Inner>>,
 }
 
@@ -73,7 +70,7 @@ fn find_id<'m>(msg: &'m BorrowedMessage) -> Option<&'m str> {
 }
 
 impl KafkaSource {
-    pub fn new(config: kafka::Config) -> anyhow::Result<Self> {
+    pub fn new(config: kafka::Config) -> anyhow::Result<(Self, KafkaSourceRunner)> {
         log::info!("Starting Kafka event source: {config:?}");
 
         let topic = config.topic;
@@ -88,46 +85,15 @@ impl KafkaSource {
         };
         let inner = Arc::new(RwLock::new(inner));
 
-        let consumer = Self::run(consumer, inner.clone());
+        let runner = KafkaSourceRunner {
+            consumer,
+            inner: inner.clone(),
+        };
+        //let consumer = Self::run(consumer, inner.clone());
 
-        let task = Handle::current().spawn(consumer);
+        //let task = Handle::current().spawn(consumer);
 
-        Ok(Self { task, inner })
-    }
-
-    async fn run(consumer: StreamConsumer, inner: Arc<RwLock<Inner>>) {
-        log::info!("Running Kafka listener ...");
-
-        loop {
-            let msg = consumer.recv().await;
-            match msg {
-                Err(err) => {
-                    log::error!("Failed to read from Kafka: {err}");
-                    break;
-                }
-                Ok(msg) => {
-                    let id = find_id(&msg);
-                    log::info!("Thing id: {id:?}");
-                    if let Some(id) = id {
-                        let lock = inner.read().unwrap();
-                        if let Some(listener) = lock.listeners.get(id) {
-                            if let Some(Ok(thing)) = msg
-                                .payload()
-                                .map(|payload| serde_json::from_slice::<Thing>(payload))
-                            {
-                                if let Err(err) = listener.1.send(Message::Change(Arc::new(thing)))
-                                {
-                                    log::info!("Failed to broadcast change: {err:?}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // FIXME: as tokio swallows up panics, we need to bring this to the main method
-        panic!("Kafka listener exited!");
+        Ok((Self { inner }, runner))
     }
 
     pub fn subscribe(&self, id: Id) -> Source {
@@ -153,8 +119,45 @@ impl KafkaSource {
     }
 }
 
-impl Drop for KafkaSource {
-    fn drop(&mut self) {
-        self.task.abort();
+pub struct KafkaSourceRunner {
+    consumer: StreamConsumer,
+    inner: Arc<RwLock<Inner>>,
+}
+
+impl KafkaSourceRunner {
+    pub async fn run(self) -> anyhow::Result<()> {
+        log::info!("Running Kafka listener ...");
+
+        loop {
+            let msg = self.consumer.recv().await;
+            match msg {
+                Err(err) => {
+                    log::error!("Failed to read from Kafka: {err}");
+                    break;
+                }
+                Ok(msg) => {
+                    let id = find_id(&msg);
+                    log::debug!("Thing id: {id:?}");
+                    if let Some(id) = id {
+                        let lock = self.inner.read().unwrap();
+                        if let Some(listener) = lock.listeners.get(id) {
+                            if let Some(Ok(thing)) = msg
+                                .payload()
+                                .map(|payload| serde_json::from_slice::<Thing>(payload))
+                            {
+                                if let Err(err) = listener.1.send(Message::Change(Arc::new(thing)))
+                                {
+                                    log::info!("Failed to broadcast change: {err:?}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        log::warn!("Exiting Kafka loop!");
+
+        Ok(())
     }
 }

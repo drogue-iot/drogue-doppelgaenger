@@ -1,6 +1,6 @@
 mod utils;
 
-use crate::model::Schema;
+use crate::model::{Internal, Schema};
 use crate::{
     model::{DesiredFeature, Metadata, Reconciliation, ReportedFeature, SyntheticFeature, Thing},
     storage::{self, UpdateError},
@@ -49,6 +49,9 @@ pub struct Data {
 
     #[serde(default, skip_serializing_if = "Reconciliation::is_empty")]
     pub reconciliation: Reconciliation,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internal: Option<Internal>,
 }
 
 impl From<&Thing> for Data {
@@ -59,6 +62,7 @@ impl From<&Thing> for Data {
             desired_state: value.desired_state.clone(),
             synthetic_state: value.synthetic_state.clone(),
             reconciliation: value.reconciliation.clone(),
+            internal: value.internal.clone(),
         }
     }
 }
@@ -166,27 +170,35 @@ WHERE
                     desired_state: entity.data.desired_state,
                     synthetic_state: entity.data.synthetic_state,
                     reconciliation: entity.data.reconciliation,
+                    internal: entity.data.internal,
                 })
             }
             None => Err(storage::Error::NotFound),
         }
     }
 
-    async fn create(&self, thing: &Thing) -> Result<()> {
+    async fn create(&self, mut thing: Thing) -> Result<Thing> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotAllowed)?;
 
         let con = self.pool.get().await.map_err(Error::Pool)?;
 
-        let Metadata {
-            name,
-            application,
-            annotations,
-            labels,
-            ..
-        } = thing.metadata.clone();
-        log::info!("Creating new thing: {application} / {name}");
+        // Init metadata. We need to set this on the thing too, as we return it.
+        let uid = Uuid::new_v4();
+        let resource_version = Uuid::new_v4();
+        let generation = 1i64;
+        let creation_timestamp = Utc::now();
+        thing.metadata.uid = Some(uid.to_string());
+        thing.metadata.creation_timestamp = Some(creation_timestamp);
+        thing.metadata.generation = Some(generation as u32);
+        thing.metadata.resource_version = Some(resource_version.to_string());
 
-        let data: Data = thing.into();
+        log::debug!(
+            "Creating new thing: {} / {}",
+            thing.metadata.application,
+            thing.metadata.name
+        );
+
+        let data: Data = (&thing).into();
 
         con.execute(
             r#"
@@ -213,14 +225,14 @@ INSERT INTO things (
 )
 "#,
             &[
-                &name,
-                &application,
-                &Uuid::new_v4(),
+                &thing.metadata.name,
+                &thing.metadata.application,
+                &uid,
                 &Utc::now(),
-                &1i64,
-                &Uuid::new_v4(),
-                &Json(annotations),
-                &Json(labels),
+                &generation,
+                &resource_version,
+                &Json(&thing.metadata.annotations),
+                &Json(&thing.metadata.labels),
                 &Json(data),
             ],
         )
@@ -230,10 +242,10 @@ INSERT INTO things (
             _ => Error::Postgres(err).into(),
         })?;
 
-        Ok(())
+        Ok(thing.clone())
     }
 
-    async fn update(&self, thing: &Thing) -> Result<()> {
+    async fn update(&self, mut thing: Thing) -> Result<Thing> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotFound)?;
 
         let con = self.pool.get().await.map_err(Error::Pool)?;
@@ -241,7 +253,7 @@ INSERT INTO things (
         let name = &thing.metadata.name;
         let application = &thing.metadata.application;
 
-        log::info!("Updating existing thing: {application} / {name}");
+        log::debug!("Updating existing thing: {application} / {name}");
 
         let mut stmt = r#"
 UPDATE things
@@ -259,7 +271,7 @@ WHERE
         .to_string();
 
         let resource_version = Uuid::new_v4();
-        let data = Json(Data::from(thing));
+        let data = Json(Data::from(&thing));
         let annotations = Json(&thing.metadata.annotations);
         let labels = Json(&thing.metadata.labels);
 
@@ -283,12 +295,29 @@ WHERE
             params.push(uid);
         }
 
-        match con.execute(&stmt, &params).await {
-            Ok(0) => Err(storage::Error::PreconditionFailed),
-            Ok(1) => Ok(()),
-            Ok(changed) => Err(storage::Error::Generic(format!(
-                "Invalid return from update: rows changed = {changed}"
-            ))),
+        stmt.push_str(
+            r#"
+RETURNING
+    CREATION_TIMESTAMP, GENERATION, UID::text
+"#,
+        );
+
+        match con.query_opt(&stmt, &params).await {
+            Ok(None) => Err(storage::Error::PreconditionFailed),
+            Ok(Some(row)) => {
+                // update metadata, with new values
+
+                thing.metadata.uid = row.try_get("UID").map_err(Error::Postgres)?;
+                thing.metadata.creation_timestamp =
+                    row.try_get("CREATION_TIMESTAMP").map_err(Error::Postgres)?;
+                thing.metadata.generation = Some(
+                    row.try_get::<_, i64>("GENERATION")
+                        .map_err(Error::Postgres)? as u32,
+                );
+                thing.metadata.resource_version = Some(resource_version.to_string());
+
+                Ok(thing)
+            }
             Err(err) => Err(Error::Postgres(err).into()),
         }
     }
@@ -298,7 +327,7 @@ WHERE
         application: &str,
         name: &str,
         f: F,
-    ) -> std::result::Result<(), UpdateError<Self::Error, E>>
+    ) -> std::result::Result<Thing, UpdateError<Self::Error, E>>
     where
         F: FnOnce(Thing) -> Fut + Send + Sync,
         Fut: Future<Output = std::result::Result<Thing, E>> + Send + Sync,
@@ -306,7 +335,7 @@ WHERE
     {
         self.ensure_app(application, || storage::Error::NotFound)?;
 
-        log::info!("Updating existing thing: {application} / {name}");
+        log::debug!("Updating existing thing: {application} / {name}");
 
         let current_thing = self.get(application, name).await?;
         // capture current metadata
@@ -337,12 +366,12 @@ WHERE
 
         if current_thing == new_thing {
             // no change
-            return Ok(());
+            return Ok(current_thing);
         }
 
         // perform update
 
-        self.update(&new_thing).await.map_err(UpdateError::Service)
+        self.update(new_thing).await.map_err(UpdateError::Service)
     }
 
     async fn delete(&self, application: &str, name: &str) -> Result<()> {
@@ -350,7 +379,7 @@ WHERE
 
         let con = self.pool.get().await.map_err(Error::Pool)?;
 
-        log::info!("Deleting thing: {application} / {name}");
+        log::debug!("Deleting thing: {application} / {name}");
 
         con.execute(
             r#"

@@ -861,11 +861,13 @@ dependencies = [
  "humantime-serde",
  "json-patch",
  "jsonschema",
+ "lazy_static",
  "log",
  "native-tls",
  "opentelemetry",
  "opentelemetry-jaeger",
  "postgres-native-tls",
+ "prometheus",
  "rdkafka",
  "rumqttc",
  "rustls",
@@ -904,6 +906,7 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "anyhow",
+ "chrono",
  "cloudevents-sdk",
  "deadpool-postgres",
  "diesel",
@@ -2195,6 +2198,27 @@ checksum = "dd96a1e8ed2596c337f8eae5f24924ec83f5ad5ab21ea8e455d3566c69fbcaf7"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "prometheus"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cface98dfa6d645ea4c789839f176e4b072265d085bfcc48eaa8d137f58d3c39"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "protobuf",
+ "thiserror",
+]
+
+[[package]]
+name = "protobuf"
+version = "2.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf7e6d18738ecd0902d30d1ad232c9125985a3422929b16c65517b38adc14f96"
 
 [[package]]
 name = "quote"

@@ -2,6 +2,7 @@
 
 use futures::future::LocalBoxFuture;
 use futures::stream::FuturesUnordered;
+use std::time::Duration;
 
 #[cfg(feature = "jaeger")]
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -106,6 +107,28 @@ where
 {
     let mut futures = FuturesUnordered::<LocalBoxFuture<Result<(), anyhow::Error>>>::new();
     futures.extend(main);
+
+    #[cfg(feature = "console-metrics")]
+    {
+        use futures::FutureExt;
+        use prometheus::{Encoder, TextEncoder};
+
+        futures.push(
+            async move {
+                log::info!("Starting console metrics loop...");
+                let encoder = TextEncoder::new();
+                loop {
+                    let metric_families = prometheus::gather();
+                    {
+                        let mut out = std::io::stdout().lock();
+                        encoder.encode(&metric_families, &mut out).unwrap();
+                    }
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                }
+            }
+            .boxed_local(),
+        );
+    }
 
     let (result, _, _) = futures::future::select_all(futures).await;
 
