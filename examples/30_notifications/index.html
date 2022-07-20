@@ -15,6 +15,15 @@
 .card.text-white .card-header code {
     color: bisque !important;
 }
+
+.drogue-ref-group > li {
+    list-style: none;
+}
+
+a.drogue-thing-ref {
+    cursor: pointer;
+}
+
     </style>
 </head>
 <body>
@@ -41,17 +50,35 @@
 <main>
     <div class="container-fluid pt-3">
         <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
+
             <div class="col">
-                <div class="card" id="thing-foo">
+                <div class="card" id="thing-overTempGroup">
                     <div class="card-header">
-                        <code>foo</code> <span class="drogue-thing-flags"></span>
+                        <code>overTempGroup</code> <span class="drogue-thing-flags"></span>
                     </div>
                     <ul class="list-group list-group-flush">
-                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="temperature">
+                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="$refs">
+                            <div class="col-6 fw-bold">Devices</div>
+                            <div class="col-6" data-drogue-thing-render-refs></div>
+                        </li>
+                    </ul>
+                    <div class="card-footer">
+                        <small class="drogue-thing-sub-state text-muted"></small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card" id="selected-thing">
+                    <div class="card-header">
+                        <span class="drogue-device-name"><i>Nothing selected</i></span> <span class="drogue-thing-flags"></span>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="temp">
                             <div class="col-6 fw-bold">Temperature</div>
                             <div class="col-6" data-drogue-thing-render-unit="°C" data-drogue-thing-render-value></div>
                         </li>
-                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="humidity">
+                        <li class="list-group-item d-flex" data-drogue-thing-reported-state="hum">
                             <div class="col-6 fw-bold">Humidity</div>
                             <div class="col-6" data-drogue-thing-render-unit="%" data-drogue-thing-render-value></div>
                         </li>
@@ -78,26 +105,47 @@
 <script src="thing.js"></script>
 
 <script>
+
     const api = new Api("http://localhost:8080", "default");
-    new ThingCard(new Thing(api, "foo"), $('#thing-foo'), {
-        showTimestamps: false,
-        labelsToCardStyle: (labels) => {
-            if ("overTemp" in labels) {
-                return "error";
+    let selectedThing = null;
+
+    function showThing(thing) {
+        let card = $('#selected-thing');
+        card.find('.card-header .drogue-device-name').html($(`<code>${thing}</code>`));
+
+        if (selectedThing) {
+            selectedThing.dispose();
+            selectedThing.thing.dispose();
+            selectedThing = null;
+        }
+
+        selectedThing = new ThingCard(new Thing(api, thing), card, {
+            showTimestamps: false,
+            labelsToCardStyle: (labels) => {
+                if ("overTemp" in labels) {
+                    return "error";
+                }
+                if ("highTemp" in labels) {
+                    return "warning";
+                }
+            },
+            labelsToPropertyStyle: (labels, name) => {
+                if ("overTemp" in labels && name === "temperature") {
+                    return "error";
+                }
+                if ("highTemp" in labels && name === "temperature") {
+                    return "warning";
+                }
             }
-            if ("highTemp" in labels) {
-                return "warning";
-            }
-        },
-        labelsToPropertyStyle: (labels, name) => {
-            if ("overTemp" in labels && name === "temperature") {
-                return "error";
-            }
-            if ("highTemp" in labels && name === "temperature") {
-                return "warning";
-            }
+        });
+    }
+
+    new ThingCard(new Thing(api, "overTempGroup"), $('#thing-overTempGroup'), {
+        refClicked: (ref) => {
+            showThing(ref);
         }
     });
+
 </script>
 
 </body>

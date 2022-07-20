@@ -78,12 +78,10 @@ function addReference(thing) {
     const lastUpdate = new Date().toISOString();
     sendMerge(thing, {
         reportedState: {
-            overTemp: {
+            "$refs": {
                 lastUpdate,
                 value: {
-                    "$refs": {
-                        [me]: {},
-                    }
+                    [me]: {},
                 }
             }
         }
@@ -95,12 +93,10 @@ function removeReference(thing) {
     const lastUpdate = new Date().toISOString();
     sendMerge(thing, {
         reportedState: {
-            overTemp: {
+            "$refs": {
                 lastUpdate,
                 value: {
-                    "$refs": {
-                        [me]: null,
-                    }
+                    [me]: null,
                 }
             }
         }
