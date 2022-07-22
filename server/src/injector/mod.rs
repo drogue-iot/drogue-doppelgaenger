@@ -1,6 +1,6 @@
 //! Injectors allow to inject events from an external system into the internal Kafka topic
 
-use drogue_doppelgaenger_core::processor::source::Sink;
+use drogue_doppelgaenger_core::processor::sink::Sink;
 
 mod mapper;
 mod mqtt;
@@ -12,11 +12,14 @@ pub use mapper::*;
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub struct Config {
+    /// allow to disable running the injector
     #[serde(default)]
-    metadata_mapper: MetadataMapper,
+    pub disabled: bool,
     #[serde(default)]
-    payload_mapper: PayloadMapper,
-    source: SourceConfig,
+    pub metadata_mapper: MetadataMapper,
+    #[serde(default)]
+    pub payload_mapper: PayloadMapper,
+    pub source: SourceConfig,
 }
 
 impl Config {

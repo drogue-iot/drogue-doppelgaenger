@@ -2,7 +2,6 @@
 
 use futures::future::LocalBoxFuture;
 use futures::stream::FuturesUnordered;
-use std::time::Duration;
 
 #[cfg(feature = "jaeger")]
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -112,6 +111,7 @@ where
     {
         use futures::FutureExt;
         use prometheus::{Encoder, TextEncoder};
+        use std::time::Duration;
 
         futures.push(
             async move {

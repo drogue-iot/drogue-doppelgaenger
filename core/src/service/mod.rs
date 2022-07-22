@@ -2,7 +2,7 @@ mod error;
 mod id;
 mod updater;
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 pub use error::*;
 pub use id::Id;
 use std::convert::Infallible;
@@ -10,9 +10,9 @@ pub use updater::*;
 use uuid::Uuid;
 
 use crate::machine::{Machine, OutboxMessage, Outcome};
-use crate::model::Thing;
+use crate::model::{Thing, WakerExt, WakerReason};
 use crate::notifier::Notifier;
-use crate::processor::source::Sink;
+use crate::processor::sink::Sink;
 use crate::processor::Event;
 use crate::storage::{self, Storage};
 use lazy_static::lazy_static;
@@ -24,23 +24,25 @@ lazy_static! {
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct Config<S: Storage, N: Notifier> {
-    pub storage: S::Config,
-    pub notifier: N::Config,
+pub struct Config<St: Storage, No: Notifier, Si: Sink> {
+    pub storage: St::Config,
+    pub notifier: No::Config,
+    pub sink: Si::Config,
 }
 
-impl<S: Storage, N: Notifier> Clone for Config<S, N> {
+impl<St: Storage, No: Notifier, Si: Sink> Clone for Config<St, No, Si> {
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
             notifier: self.notifier.clone(),
+            sink: self.sink.clone(),
         }
     }
 }
 
-pub struct Service<S: Storage, N: Notifier, Si: Sink> {
-    storage: S,
-    notifier: N,
+pub struct Service<St: Storage, No: Notifier, Si: Sink> {
+    storage: St,
+    notifier: No,
     sink: Si,
 }
 
@@ -65,20 +67,28 @@ where
     }
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
-    // FIXME: I don't like having the sink provided here directly. Need to split this up!
-    pub fn new(config: Config<S, N>, sink: Si) -> anyhow::Result<Self> {
-        let Config { storage, notifier } = config;
-        let storage = S::new(&storage)?;
-        let notifier = N::new(&notifier)?;
-        Ok(Self {
+impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
+    pub fn from_config(config: Config<St, No, Si>) -> anyhow::Result<Self> {
+        let Config {
             storage,
             notifier,
             sink,
-        })
+        } = config;
+        let storage = St::from_config(&storage)?;
+        let notifier = No::from_config(&notifier)?;
+        let sink = Si::from_config(sink)?;
+        Ok(Self::new(storage, notifier, sink))
     }
 
-    pub async fn create(&self, thing: Thing) -> Result<(), Error<S, N>> {
+    pub fn new(storage: St, notifier: No, sink: Si) -> Self {
+        Self {
+            storage,
+            notifier,
+            sink,
+        }
+    }
+
+    pub async fn create(&self, thing: Thing) -> Result<Thing, Error<St, No>> {
         let Outcome {
             mut new_thing,
             outbox,
@@ -95,32 +105,39 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
 
         // we can send the events right away, as we created the entry
 
-        self.send_and_ack(new_thing, outbox).await?;
+        let new_thing = self.send_and_ack(new_thing, outbox).await?;
+
+        // notify
+
+        self.notifier
+            .notify(&new_thing)
+            .await
+            .map_err(Error::Notifier)?;
 
         // FIXME: handle error
 
-        Ok(())
+        Ok(new_thing)
     }
 
-    pub async fn get(&self, id: Id) -> Result<Thing, Error<S, N>> {
+    pub async fn get(&self, id: &Id) -> Result<Option<Thing>, Error<St, No>> {
         self.storage
             .get(&id.application, &id.thing)
             .await
             .map_err(Error::Storage)
     }
 
-    pub async fn delete(&self, id: Id) -> Result<(), Error<S, N>> {
+    pub async fn delete(&self, id: &Id) -> Result<bool, Error<St, No>> {
         self.storage
             .delete(&id.application, &id.thing)
             .await
             .or_else(|err| match err {
                 // if we didn't find what we want to delete, this is just fine
-                storage::Error::NotFound => Ok(()),
+                storage::Error::NotFound => Ok(false),
                 err => Err(Error::Storage(err)),
             })
     }
 
-    pub async fn update<U>(&self, id: &Id, updater: U) -> Result<(), Error<S, N>>
+    pub async fn update<U>(&self, id: &Id, updater: U) -> Result<Thing, Error<St, No>>
     where
         U: Updater,
     {
@@ -128,6 +145,7 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
             .storage
             .get(&id.application, &id.thing)
             .await
+            .and_then(|r| r.ok_or(storage::Error::NotFound))
             .map_err(Error::Storage)?;
 
         let Outcome {
@@ -144,7 +162,7 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
         if current_thing == new_thing {
             log::debug!("Thing state not changed. Return early!");
             // no change, nothing to do
-            return Ok(());
+            return Ok(current_thing);
         }
 
         OUTBOX_EVENTS.inc_by(outbox.len() as u64);
@@ -166,7 +184,7 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
         log::debug!("Current outbox size: {}", current_outbox);
 
         if current_outbox <= 0 {
-            // only sending when we had no previous events
+            // only send when we had no previous events
             new_thing = self.send_and_ack(new_thing, outbox).await?;
         }
 
@@ -181,7 +199,7 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
 
         // done
 
-        Ok(())
+        Ok(new_thing)
     }
 
     /// Add new, scheduled, messages to the outbox, and return the entries to send out.
@@ -215,6 +233,12 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
 
         internal.outbox.extend(add.clone());
 
+        // schedule waker
+
+        if !internal.outbox.is_empty() {
+            internal.wakeup(Duration::seconds(30), WakerReason::Outbox);
+        }
+
         // return the added events
 
         add
@@ -224,7 +248,7 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
         &self,
         mut new_thing: Thing,
         outbox: Vec<Event>,
-    ) -> Result<Thing, Error<S, N>> {
+    ) -> Result<Thing, Error<St, No>> {
         log::debug!("New outbox: {outbox:?}");
 
         if outbox.is_empty() {
@@ -239,6 +263,8 @@ impl<S: Storage, N: Notifier, Si: Sink> Service<S, N, Si> {
                 // ack outbox events
                 if let Some(internal) = &mut new_thing.internal {
                     internal.outbox.clear();
+                    // we can clear the waker, as we are sure that the outbox was clear initially
+                    internal.clear_wakeup(WakerReason::Outbox);
                     new_thing = self
                         .storage
                         .update(new_thing)

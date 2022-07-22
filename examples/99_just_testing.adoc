@@ -1,0 +1,38 @@
+= Just my test stuff
+
+[source,shell]
+----
+http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "overTempGroup" }'
+
+http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "A4:C1:38:0A:88:A8" }'
+http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "A4:C1:38:A2:6D:42" }'
+
+http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8/reconciliations 'changed[overTempGroup][script]=@20_reconcile/recon2.js'
+http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42/reconciliations 'changed[overTempGroup][script]=@20_reconcile/recon2.js'
+----
+
+Nudge the conditions:
+
+[source,shell]
+----
+http PATCH localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8 content-type:application/json-patch+json '[0][op]=remove' '[0][path]=/metadata/annotations/condition~1overTemp' '[1][op]=add' '[1][path]=/metadata/annotations' '[1][value]:={"nudge":"1"}'
+http PATCH localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42 content-type:application/json-patch+json '[0][op]=remove' '[0][path]=/metadata/annotations/condition~1overTemp' '[1][op]=add' '[1][path]=/metadata/annotations' '[1][value]:={"nudge":"1"}'
+----
+
+Get data:
+
+[source,shell]
+----
+http GET localhost:8080/api/v1alpha1/things/default/things/overTempGroup
+http GET localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8
+http GET localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42
+----
+
+Deleting:
+
+[source,shell]
+----
+http DELETE localhost:8080/api/v1alpha1/things/default/things/overTempGroup
+http DELETE localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8
+http DELETE localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42
+----

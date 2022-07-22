@@ -1,6 +1,7 @@
 use super::Outgoing;
 use crate::model::Thing;
 use anyhow::bail;
+use chrono::Duration;
 use deno_core::{serde_v8, v8, Extension, JsRuntime, RuntimeOptions};
 use serde_json::Value;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ const KEY_CURRENT_STATE: &str = "currentState";
 const KEY_NEW_STATE: &str = "newState";
 const KEY_OUTBOX: &str = "outbox";
 const KEY_LOGS: &str = "logs";
+const KEY_WAKER: &str = "waker";
 
 /// Run a deno script
 ///
@@ -144,9 +146,46 @@ fn extract_context(runtime: &mut JsRuntime) -> anyhow::Result<Outgoing> {
         }
     };
 
+    let waker = {
+        let key = serde_v8::to_v8(&mut scope, KEY_WAKER)?;
+        match global.get(scope, key) {
+            Some(value) => to_duration(serde_v8::from_v8(scope, value)?)?,
+            None => None,
+        }
+    };
+
     Ok(Outgoing {
         new_thing,
         outbox,
         log,
+        waker,
+    })
+}
+
+/// convert a JavaScript value into a duration
+fn to_duration(value: Value) -> anyhow::Result<Option<Duration>> {
+    Ok(match value {
+        Value::String(time) => {
+            let duration = humantime::parse_duration(&time)?;
+            Some(Duration::from_std(duration)?)
+        }
+        Value::Number(seconds) => {
+            if let Some(seconds) = seconds.as_i64() {
+                if seconds > 0 {
+                    return Ok(Some(Duration::seconds(seconds)));
+                }
+            } else if let Some(_) = seconds.as_u64() {
+                // we can be sure it doesn't fit into an i64
+                return Ok(Some(Duration::seconds(i64::MAX)));
+            } else if let Some(seconds) = seconds.as_f64() {
+                if seconds > i64::MAX as f64 {
+                    return Ok(Some(Duration::seconds(i64::MAX)));
+                } else if seconds > 0f64 {
+                    return Ok(Some(Duration::seconds(seconds as i64)));
+                }
+            }
+            None
+        }
+        _ => None,
     })
 }

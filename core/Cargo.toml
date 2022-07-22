@@ -19,11 +19,13 @@ config = "0.13"
 dotenv = "0.15"
 env_logger = "0.9"
 futures = "0.3"
+humantime = "2"
 humantime-serde = "1"
 json-patch = { version = "0.2", default-features = false }
 jsonschema = "0.16"
 log = "0.4"
 opentelemetry = { version = "0.17", features = ["rt-tokio"] }
+postgres-types = "0.2"
 rdkafka = { version = "0.28", features = ["sasl", "ssl"] }
 rustls = "0.20"
 rustls-native-certs = "0.6"

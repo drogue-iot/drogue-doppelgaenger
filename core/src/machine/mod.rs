@@ -1,9 +1,10 @@
 mod deno;
 
 use crate::machine::deno::DenoOptions;
-use crate::model::{Code, JsonSchema, Metadata, Schema, Thing, ThingState};
+use crate::model::{Code, JsonSchema, Metadata, Schema, Thing, ThingState, WakerExt, WakerReason};
 use crate::processor::Message;
 use anyhow::anyhow;
+use chrono::Duration;
 use deno_core::url::Url;
 use jsonschema::{Draft, JSONSchema, SchemaResolver, SchemaResolverError};
 use serde_json::Value;
@@ -144,11 +145,12 @@ pub struct OutboxMessage {
     pub message: Message,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Outgoing {
     pub new_thing: Thing,
     pub outbox: Vec<OutboxMessage>,
     pub log: Vec<String>,
+    pub waker: Option<Duration>,
 }
 
 async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Outcome, Error> {
@@ -177,10 +179,16 @@ async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Ou
                 .await
                 .map_err(Error::Reconcile)?;
 
+                // FIXME: record error (if any)
+
                 new_thing = outgoing.new_thing;
                 if let Some(rec) = new_thing.reconciliation.changed.get_mut(&name) {
                     rec.last_log = outgoing.log;
                 }
+                if let Some(duration) = outgoing.waker {
+                    new_thing.wakeup(duration, WakerReason::Reconcile);
+                }
+
                 outbox.extend(outgoing.outbox);
             }
         }
@@ -220,6 +228,8 @@ mod test {
             },
             new_thing
         );
+
+        assert_eq!(outbox, vec![]);
     }
 
     #[tokio::test]
@@ -262,6 +272,8 @@ mod test {
             },
             new_thing
         );
+
+        assert_eq!(outbox, vec![]);
     }
 
     const UID: &str = "3952a802-01e8-11ed-a9c0-d45d6455d2cc";
@@ -291,6 +303,7 @@ mod test {
             desired_state: Default::default(),
             synthetic_state: Default::default(),
             reconciliation: Default::default(),
+            internal: Default::default(),
         }
     }
 }

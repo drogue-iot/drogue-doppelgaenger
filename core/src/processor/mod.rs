@@ -1,13 +1,14 @@
+pub mod sink;
 pub mod source;
 
-use crate::model::Thing;
-use crate::notifier::Notifier;
-use crate::processor::source::{Sink, Source};
-use crate::service::JsonMergeUpdater;
+use crate::model::WakerReason;
 use crate::{
+    model::Thing,
+    notifier::Notifier,
+    processor::{sink::Sink, source::Source},
     service::{
-        self, Id, JsonPatchUpdater, MergeError, PatchError, ReportedStateUpdater, Service,
-        UpdateMode, Updater,
+        self, Id, JsonMergeUpdater, JsonPatchUpdater, MergeError, PatchError, ReportedStateUpdater,
+        Service, UpdateMode, Updater,
     },
     storage::{self, Storage},
 };
@@ -20,8 +21,8 @@ use prometheus::{
     IntCounterVec,
 };
 use serde_json::Value;
-use std::collections::BTreeMap;
-use std::convert::Infallible;
+use std::{collections::BTreeMap, convert::Infallible};
+use uuid::Uuid;
 
 lazy_static! {
     static ref EVENTS: IntCounter =
@@ -41,6 +42,22 @@ pub struct Event {
     pub message: Message,
 }
 
+impl Event {
+    pub fn new<A: Into<String>, D: Into<String>, M: Into<Message>>(
+        application: A,
+        device: D,
+        message: M,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            application: application.into(),
+            device: device.into(),
+            message: message.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Message {
@@ -51,27 +68,80 @@ pub enum Message {
     },
     Patch(Patch),
     Merge(Value),
+    Wakeup {
+        reasons: Vec<WakerReason>,
+    },
 }
 
-pub struct Processor<S, N, I, Si>
-where
-    S: Storage,
-    N: Notifier,
-    I: Source,
-    Si: Sink,
-{
-    service: Service<S, N, Si>,
-    source: I,
+impl Message {
+    pub fn report_state() -> ReportStateBuilder {
+        Default::default()
+    }
 }
 
-impl<S, N, I, Si> Processor<S, N, I, Si>
+#[derive(Clone, Debug, Default)]
+pub struct ReportStateBuilder {
+    state: BTreeMap<String, Value>,
+    partial: bool,
+}
+
+impl ReportStateBuilder {
+    pub fn partial(mut self) -> Self {
+        self.partial = true;
+        self
+    }
+
+    pub fn full(mut self) -> Self {
+        self.partial = false;
+        self
+    }
+
+    pub fn state<P: Into<String>, V: Into<Value>>(mut self, property: P, value: V) -> Self {
+        self.state.insert(property.into(), value.into());
+        self
+    }
+
+    pub fn build(self) -> Message {
+        Message::ReportState {
+            state: self.state,
+            partial: self.partial,
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Config<St: Storage, No: Notifier, Si: Sink, So: Source> {
+    #[serde(bound = "")]
+    pub service: service::Config<St, No, Si>,
+    pub source: So::Config,
+}
+
+pub struct Processor<St, No, Si, So>
 where
-    S: Storage,
-    N: Notifier,
-    I: Source,
+    St: Storage,
+    No: Notifier,
     Si: Sink,
+    So: Source,
 {
-    pub fn new(service: Service<S, N, Si>, source: I) -> Self {
+    service: Service<St, No, Si>,
+    source: So,
+}
+
+impl<St, No, Si, So> Processor<St, No, Si, So>
+where
+    St: Storage,
+    No: Notifier,
+    Si: Sink,
+    So: Source,
+{
+    pub fn from_config(config: Config<St, No, Si, So>) -> anyhow::Result<Self> {
+        let service = Service::from_config(config.service)?;
+        let source = So::from_config(config.source)?;
+
+        Ok(Self::new(service, source))
+    }
+
+    pub fn new(service: Service<St, No, Si>, source: So) -> Self {
         Self { service, source }
     }
 
@@ -175,6 +245,11 @@ impl Updater for Message {
             .update(thing)?),
             Message::Patch(patch) => Ok(JsonPatchUpdater(patch).update(thing)?),
             Message::Merge(merge) => Ok(JsonMergeUpdater(merge).update(thing)?),
+            Message::Wakeup { .. } => {
+                // FIXME: need to implement wakeup
+                log::warn!("Wakeup");
+                Ok(thing)
+            }
         }
     }
 }

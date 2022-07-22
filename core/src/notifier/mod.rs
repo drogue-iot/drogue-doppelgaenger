@@ -16,7 +16,7 @@ pub trait Notifier: Sized + Send + Sync + 'static {
     type Config: Clone + Debug + Send + Sync + serde::de::DeserializeOwned + 'static;
     type Error: std::error::Error + Debug;
 
-    fn new(config: &Self::Config) -> anyhow::Result<Self>;
+    fn from_config(config: &Self::Config) -> anyhow::Result<Self>;
 
     async fn notify(&self, thing: &Thing) -> Result<(), Error<Self::Error>>;
 }

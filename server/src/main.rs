@@ -5,18 +5,25 @@ extern crate diesel_migrations;
 
 use actix_web::{middleware::Logger, App, HttpServer};
 use anyhow::anyhow;
-use drogue_doppelgaenger_core::config::kafka::KafkaProperties;
-use drogue_doppelgaenger_core::processor::source::EventStream;
-use drogue_doppelgaenger_core::processor::{source, Processor};
-use drogue_doppelgaenger_core::service::Service;
 use drogue_doppelgaenger_core::{
-    app::run_main, config::ConfigFromEnv, notifier::kafka, service, storage::postgres,
+    app::run_main,
+    config::{kafka::KafkaProperties, ConfigFromEnv},
+    notifier,
+    processor::{
+        sink::{self, Sink},
+        source::{self, Source},
+        Processor,
+    },
+    service::{self, Service},
+    storage::postgres,
+    waker::{self},
 };
 use futures::{FutureExt, TryFutureExt};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     config::FromClientConfig,
 };
+use std::time::Duration;
 use tokio::runtime::Handle;
 
 embed_migrations!("../database-migration/migrations");
@@ -26,12 +33,17 @@ pub struct Server {
     #[serde(default)]
     application: Option<String>,
     db: deadpool_postgres::Config,
+
     /// sink for change events
-    kafka_sink: kafka::Config,
+    notifier_sink: notifier::kafka::Config,
     /// source for change events
-    kafka_source: kafka::Config,
-    /// source for device events
+    notifier_source: notifier::kafka::Config,
+
+    // sink for events
+    event_sink: sink::kafka::Config,
+    // source for events
     event_source: source::kafka::Config,
+
     /// optional injector
     #[serde(default)]
     injector: Option<injector::Config>,
@@ -92,8 +104,8 @@ async fn main() -> anyhow::Result<()> {
 
     run_migrations(&server.db).await.unwrap();
     create_topic(
-        KafkaProperties(server.kafka_sink.properties.clone()),
-        server.kafka_sink.topic.clone(),
+        KafkaProperties(server.notifier_sink.properties.clone()),
+        server.notifier_sink.topic.clone(),
     )
     .await
     .unwrap();
@@ -107,20 +119,22 @@ async fn main() -> anyhow::Result<()> {
     let service = service::Config {
         storage: postgres::Config {
             application: server.application.clone(),
-            postgres: server.db,
+            postgres: server.db.clone(),
         },
-        notifier: server.kafka_sink,
+        notifier: server.notifier_sink,
+        sink: server.event_sink.clone(),
     };
-    let backend = drogue_doppelgaenger_backend::Config::<postgres::Storage, kafka::Notifier> {
-        application: server.application,
+    let backend = drogue_doppelgaenger_backend::Config::<
+        postgres::Storage,
+        notifier::kafka::Notifier,
+        sink::kafka::Sink,
+    > {
+        application: server.application.clone(),
         service: service.clone(),
-        listener: server.kafka_source,
-        // FIXME: put into service config
-        sink: server.event_source.clone(),
+        listener: server.notifier_source,
     };
 
-    let (configurator, runner) =
-        drogue_doppelgaenger_backend::configure::<_, _, source::kafka::Sink>(backend)?;
+    let (configurator, runner) = drogue_doppelgaenger_backend::configure(backend)?;
 
     // prepare the http server
 
@@ -138,17 +152,33 @@ async fn main() -> anyhow::Result<()> {
 
     let mut tasks = vec![runner];
 
-    let (source, sink) = source::kafka::EventStream::new(server.event_source)?;
+    let sink = sink::kafka::Sink::from_config(server.event_sink.clone())?;
+    let source = source::kafka::Source::from_config(server.event_source)?;
 
-    if let Some(injector) = server.injector {
+    if let Some(injector) = server.injector.filter(|injector| !injector.disabled) {
         log::info!("Running injector: {injector:?}");
-        tasks.push(injector.run(sink.clone()).boxed_local());
+        tasks.push(injector.run(sink).boxed_local());
     }
 
-    let service = Service::new(service, sink)?;
+    let service = Service::from_config(service)?;
+
     let processor = Processor::new(service, source).run().boxed_local();
 
-    tasks.extend([http, processor]);
+    let waker = waker::Processor::from_config(waker::Config::<
+        waker::postgres::Waker,
+        sink::kafka::Sink,
+    > {
+        waker: waker::postgres::Config {
+            application: server.application,
+            postgres: server.db,
+            waker_delay: Duration::from_secs(1),
+        },
+        sink: server.event_sink,
+    })?
+    .run()
+    .boxed_local();
+
+    tasks.extend([http, processor, waker]);
 
     // run the main loop
 

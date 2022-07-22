@@ -2,13 +2,14 @@ use crate::notifier::actix::WebSocketHandler;
 use crate::Instance;
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-use drogue_doppelgaenger_core::processor::source::Sink;
-use drogue_doppelgaenger_core::service::JsonMergeUpdater;
+use drogue_doppelgaenger_core::processor::sink::Sink;
 use drogue_doppelgaenger_core::{
     listener::KafkaSource,
     model::{Reconciliation, Thing},
     notifier::Notifier,
-    service::{Id, JsonPatchUpdater, Patch, ReportedStateUpdater, Service, UpdateMode},
+    service::{
+        Id, JsonMergeUpdater, JsonPatchUpdater, Patch, ReportedStateUpdater, Service, UpdateMode,
+    },
     storage::Storage,
 };
 use serde_json::{json, Value};
@@ -18,7 +19,7 @@ pub async fn things_get<S: Storage, N: Notifier, Si: Sink>(
     service: web::Data<Service<S, N, Si>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let result = service.get(path.into_inner()).await?;
+    let result = service.get(&path.into_inner()).await?;
 
     Ok(HttpResponse::Ok().json(result))
 }
@@ -106,7 +107,7 @@ pub async fn things_delete<S: Storage, N: Notifier, Si: Sink>(
     service: web::Data<Service<S, N, Si>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    service.delete(path.into_inner()).await?;
+    service.delete(&path.into_inner()).await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }

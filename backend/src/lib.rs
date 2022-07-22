@@ -3,26 +3,24 @@ mod notifier;
 
 use actix_web::{guard, web, App, HttpServer};
 use anyhow::anyhow;
-use drogue_doppelgaenger_core::listener::KafkaSource;
-use drogue_doppelgaenger_core::notifier::{kafka, Notifier};
-use drogue_doppelgaenger_core::processor::source::{EventStream, Sink};
-use drogue_doppelgaenger_core::service::Service;
-use drogue_doppelgaenger_core::storage::postgres;
-use drogue_doppelgaenger_core::{app::run_main, processor, service, storage::Storage};
-use futures::future::LocalBoxFuture;
-use futures::{FutureExt, TryFutureExt};
+use drogue_doppelgaenger_core::{
+    app::run_main,
+    listener::KafkaSource,
+    notifier::{kafka, Notifier},
+    processor::sink::{self, Sink},
+    service::{self, Service},
+    storage::{postgres, Storage},
+};
+use futures::{future::LocalBoxFuture, FutureExt, TryFutureExt};
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub struct Config<S: Storage, N: Notifier> {
+pub struct Config<S: Storage, N: Notifier, Si: Sink> {
     pub application: Option<String>,
     // serde(bound) required as S isn't serializable: https://github.com/serde-rs/serde/issues/1296
     #[serde(bound = "")]
-    pub service: service::Config<S, N>,
+    pub service: service::Config<S, N, Si>,
 
     pub listener: kafka::Config,
-
-    // FIXME: fix up sink configuration
-    pub sink: processor::source::kafka::Config,
 }
 
 #[derive(Clone, Debug)]
@@ -31,14 +29,12 @@ pub struct Instance {
 }
 
 pub fn configure<S: Storage, N: Notifier, Si: Sink>(
-    config: Config<S, N>,
+    config: Config<S, N, Si>,
 ) -> anyhow::Result<(
     impl Fn(&mut web::ServiceConfig) + Send + Sync + Clone,
     LocalBoxFuture<'static, anyhow::Result<()>>,
 )> {
-    let (_, sink) = processor::source::kafka::EventStream::new(config.sink)?;
-
-    let service = Service::new(config.service, sink)?;
+    let service = Service::from_config(config.service)?;
     let service = web::Data::new(service);
 
     let (source, runner) = KafkaSource::new(config.listener)?;
@@ -77,11 +73,11 @@ pub fn configure<S: Storage, N: Notifier, Si: Sink>(
                     ),
             );
             ctx.service(
-                web::resource("/api/v1alpha1/things/{application}/things/{thing}/reportedState")
+                web::resource("/api/v1alpha1/things/{application}/things/{thing}/reportedStates")
                     .route(web::put().to(endpoints::things_update_reported_state::<S, N, Si>)),
             );
             ctx.service(
-                web::resource("/api/v1alpha1/things/{application}/things/{thing}/reconciliation")
+                web::resource("/api/v1alpha1/things/{application}/things/{thing}/reconciliations")
                     .route(web::put().to(endpoints::things_update_reconciliation::<S, N, Si>)),
             );
             ctx.service(
@@ -97,8 +93,10 @@ pub fn configure<S: Storage, N: Notifier, Si: Sink>(
     ))
 }
 
-pub async fn run(config: Config<postgres::Storage, kafka::Notifier>) -> anyhow::Result<()> {
-    let (configurator, runner) = configure::<_, _, processor::source::kafka::Sink>(config)?;
+pub async fn run(
+    config: Config<postgres::Storage, kafka::Notifier, sink::kafka::Sink>,
+) -> anyhow::Result<()> {
+    let (configurator, runner) = configure::<_, _, _>(config)?;
 
     let http = HttpServer::new(move || App::new().configure(|ctx| configurator(ctx)))
         .bind("[::]:8080")?

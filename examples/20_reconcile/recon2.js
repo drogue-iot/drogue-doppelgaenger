@@ -1,3 +1,27 @@
+const WARNING_THRESHOLD = 20;
+const ALARM_THRESHOLD = 28;
+const PROPERTY = "temp";
+
+function updateLabel(key, value) {
+    if (value !== undefined) {
+        if (newState.metadata.labels === undefined) {
+            newState.metadata.labels = {};
+        }
+        newState.metadata.labels[key] = value;
+    } else {
+        if (newState.metadata.labels !== undefined) {
+            delete newState.metadata.labels[key];
+        }
+    }
+}
+
+function flagLabel(key, state) {
+    updateLabel(key, state ? "" : undefined)
+}
+
+// check over temp
+flagLabel("highTemp", newState?.reportedState?.[PROPERTY]?.value > WARNING_THRESHOLD);
+flagLabel("overTemp", newState?.reportedState?.[PROPERTY]?.value > ALARM_THRESHOLD);
 
 function log(text) {
     //logs.push(text)
@@ -116,8 +140,8 @@ renameReportedState("geoloc", "location");
 
 //log(`Post(renameReportedState): ${JSON.stringify(newState, null, 2)}`);
 
-whenConditionChanged("overTemp", "temp", (value) => {
-    return value > 20;
+whenConditionChanged("overTemp", PROPERTY, (value) => {
+    return value > ALARM_THRESHOLD;
 }, (condition) => {
     log(`Condition change: ${condition}`);
     if (condition) {
@@ -126,5 +150,6 @@ whenConditionChanged("overTemp", "temp", (value) => {
         removeReference("overTempGroup");
     }
 });
+
 
 //log(`Post(whenConditionChanged): ${JSON.stringify(newState, null, 2)}`);
