@@ -23,7 +23,6 @@ use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     config::FromClientConfig,
 };
-use std::time::Duration;
 use tokio::runtime::Handle;
 
 embed_migrations!("../database-migration/migrations");
@@ -171,7 +170,6 @@ async fn main() -> anyhow::Result<()> {
         waker: waker::postgres::Config {
             application: server.application,
             postgres: server.db,
-            waker_delay: Duration::from_secs(1),
         },
         sink: server.event_sink,
     })?

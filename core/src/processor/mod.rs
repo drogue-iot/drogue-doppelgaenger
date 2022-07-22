@@ -1,9 +1,8 @@
 pub mod sink;
 pub mod source;
 
-use crate::model::WakerReason;
 use crate::{
-    model::Thing,
+    model::{Thing, WakerReason},
     notifier::Notifier,
     processor::{sink::Sink, source::Source},
     service::{
@@ -151,7 +150,7 @@ where
                 log::debug!("Event: {event:?}");
                 EVENTS.inc();
 
-                let _ = PROCESSING_TIME.start_timer();
+                let _timer = PROCESSING_TIME.start_timer();
 
                 let Event {
                     id: _,
@@ -245,9 +244,11 @@ impl Updater for Message {
             .update(thing)?),
             Message::Patch(patch) => Ok(JsonPatchUpdater(patch).update(thing)?),
             Message::Merge(merge) => Ok(JsonMergeUpdater(merge).update(thing)?),
-            Message::Wakeup { .. } => {
-                // FIXME: need to implement wakeup
-                log::warn!("Wakeup");
+            Message::Wakeup { reasons } => {
+                log::info!("Wakeup: {reasons:?}");
+
+                // FIXME: we should handle the outbox reason differently
+
                 Ok(thing)
             }
         }

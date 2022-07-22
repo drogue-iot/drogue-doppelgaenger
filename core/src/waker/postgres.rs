@@ -1,8 +1,9 @@
 use crate::model::WakerReason;
 use crate::service::Id;
 use crate::waker::TargetId;
+use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use deadpool_postgres::{Client, Runtime};
+use deadpool_postgres::{Client, Runtime, Transaction};
 use postgres_types::{Json, Type};
 use std::future::Future;
 use std::time::Duration;
@@ -14,23 +15,11 @@ use uuid::Uuid;
 pub struct Config {
     pub application: Option<String>,
     pub postgres: deadpool_postgres::Config,
-    #[serde(with = "humantime_serde", default = "default::waker_delay")]
-    pub waker_delay: Duration,
-}
-
-mod default {
-    use std::time::Duration;
-
-    pub const fn waker_delay() -> Duration {
-        Duration::from_secs(1)
-    }
 }
 
 pub struct Waker {
     application: Option<String>,
     pool: deadpool_postgres::Pool,
-    // waker delay in ISO 8609 duration format
-    waker_delay: String,
 }
 
 #[async_trait]
@@ -46,7 +35,6 @@ impl super::Waker for Waker {
         Ok(Self {
             pool,
             application: config.application,
-            waker_delay: chrono::Duration::from_std(config.waker_delay)?.to_string(),
         })
     }
 
@@ -70,11 +58,7 @@ impl super::Waker for Waker {
                     log::warn!("Failed to prepare for tick: {err}");
                 }
                 Ok(con) => {
-                    if let Err(err) =
-                        WakerRun::new(con, &stmt, &self.application, &self.waker_delay, &f)
-                            .run()
-                            .await
-                    {
+                    if let Err(err) = WakerRun::new(con, &stmt, &self.application, &f).run().await {
                         // FIXME: map to liveness status
                         log::warn!("Failed to tick: {err}");
                     }
@@ -86,54 +70,44 @@ impl super::Waker for Waker {
 
 impl Waker {
     fn build_statement(&self) -> (String, Vec<Type>) {
-        let mut types = vec![Type::VARCHAR];
+        let mut types = vec![];
 
         let and_application = match self.application.is_some() {
             true => {
                 types.push(Type::VARCHAR);
                 r#"
             AND
-                APPLICATION = $2
+                APPLICATION = $1
 "#
             }
             false => "",
         };
 
-        // We retrieve the next thing that is due for being woken. We fetch only one, and push
-        // its due time by a short interval past now. That way others would not see it right away.
-        // The reconciliation will be processed and should update the waker too.
-        //
-        // NOTE: If we plan on scheduling the wakeup through something that buffers (like Kafka)
-        // then it would not work to just delay for a short amount of time, as we don't know when
-        // the wakeup would be executed. In this case, we would need to send out the event, and then
-        // clear the waker.
+        // We retrieve the next thing, and lock it for an update. We only fetch one, and skip
+        // all locked rows. So we can scale up processing to some degree. Once we successfully
+        // scheduled the wakeup (e.g. sending that to Kafka) we can update the record and commit.
 
         let stmt = format!(
             r#"
-UPDATE
+SELECT
+    APPLICATION,
+    NAME,
+    UID,
+    RESOURCE_VERSION,
+    WAKER_REASONS
+
+FROM
     things
-SET
-    WAKER = NOW() + $1::interval
+
 WHERE
-    UID = (
-        SELECT
-            UID
-        FROM
-            things
-        WHERE
-                WAKER <= NOW()
+        WAKER <= NOW()
 {and_application}
 
-        ORDER BY
-            WAKER ASC 
-        
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED
+ORDER BY
+    WAKER ASC 
 
-    )
-
-RETURNING
-    APPLICATION, NAME, UID, RESOURCE_VERSION, WAKER_REASONS
+LIMIT 1
+FOR UPDATE SKIP LOCKED
 "#
         );
 
@@ -149,8 +123,7 @@ where
     con: Client,
     stmt: &'r (String, Vec<Type>),
     application: &'r Option<String>,
-    // the amount of time to delay the waker by when processing
-    waker_delay: &'r str,
+
     f: &'r F,
 }
 
@@ -163,19 +136,19 @@ where
         con: Client,
         stmt: &'r (String, Vec<Type>),
         application: &'r Option<String>,
-        waker_delay: &'r str,
+
         f: &'r F,
     ) -> Self {
         Self {
             con,
             stmt,
             application,
-            waker_delay,
+
             f,
         }
     }
 
-    async fn run(self) -> anyhow::Result<()> {
+    async fn run(mut self) -> anyhow::Result<()> {
         let stmt = self
             .con
             .prepare_typed_cached(&self.stmt.0, &self.stmt.1)
@@ -191,14 +164,12 @@ where
         Ok(())
     }
 
-    async fn tick_next(&self, stmt: &Statement) -> anyhow::Result<bool> {
+    async fn tick_next(&mut self, stmt: &Statement) -> anyhow::Result<bool> {
+        let tx = self.con.build_transaction().start().await?;
+
         let row = match &self.application {
-            Some(application) => {
-                self.con
-                    .query_opt(stmt, &[&self.waker_delay, application])
-                    .await
-            }
-            None => self.con.query_opt(stmt, &[&self.waker_delay]).await,
+            Some(application) => tx.query_opt(stmt, &[application]).await,
+            None => tx.query_opt(stmt, &[]).await,
         }?;
 
         Ok(match row {
@@ -228,8 +199,7 @@ where
 
                 // clear waker
 
-                self.clear_waker(application, thing, uid, resource_version)
-                    .await?;
+                Self::clear_waker(tx, application, thing, uid, resource_version).await?;
 
                 // done with this entry
 
@@ -240,19 +210,16 @@ where
     }
 
     async fn clear_waker(
-        &self,
-
+        tx: Transaction<'_>,
         application: String,
         thing: String,
         uid: Uuid,
         resource_version: Uuid,
     ) -> anyhow::Result<()> {
-        // we try to clear the waker. It might already be cleared due to the fact that we woke
-        // that thing up. But it might also be that the wakeup event is still queued, so we don't
-        // want to wake it up too often.
+        // we clear the waker and commit the transaction. The oplock should hold, as we have locked
+        // the record.
 
-        let stmt = self
-            .con
+        let stmt = tx
             .prepare_typed_cached(
                 r#"
 UPDATE
@@ -272,14 +239,15 @@ WHERE
             )
             .await?;
 
-        let result = self
-            .con
+        let result = tx
             .execute(&stmt, &[&application, &thing, &uid, &resource_version])
             .await?;
 
         if result == 0 {
-            log::debug!("Lost oplock clearing waker. Don't worry.")
+            bail!("Lost oplock during waking.");
         }
+
+        tx.commit().await?;
 
         Ok(())
     }

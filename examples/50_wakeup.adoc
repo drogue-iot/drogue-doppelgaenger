@@ -1,0 +1,12 @@
+== Set a label
+
+.recon1.js
+[source,javascript]
+----
+include::50_wakeup/wakeup1.js[]
+----
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[wakeup][script]=@50_wakeup/wakeup1.js'
+----
