@@ -1,7 +1,8 @@
 use crate::model::WakerReason;
 use crate::service::Id;
+use crate::storage::postgres::Data;
 use crate::waker::TargetId;
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use async_trait::async_trait;
 use deadpool_postgres::{Client, Runtime, Transaction};
 use postgres_types::{Json, Type};
@@ -94,7 +95,7 @@ SELECT
     NAME,
     UID,
     RESOURCE_VERSION,
-    WAKER_REASONS
+    DATA
 
 FROM
     things
@@ -178,8 +179,15 @@ where
                 let thing: String = row.try_get("NAME")?;
                 let uid: Uuid = row.try_get("UID")?;
                 let resource_version: Uuid = row.try_get("RESOURCE_VERSION")?;
-                let reasons: Vec<WakerReason> =
-                    row.try_get::<_, Json<Vec<WakerReason>>>("WAKER_REASONS")?.0;
+                let data = row.try_get::<_, Json<Data>>("DATA")?.0;
+
+                let reasons = data
+                    .internal
+                    .as_ref()
+                    .and_then(|i| i.waker.as_ref())
+                    .map(|w| &w.why)
+                    .map(|r| r.iter().map(|r| *r).collect::<Vec<_>>())
+                    .unwrap_or_default();
 
                 // send wakeup
 
@@ -199,7 +207,7 @@ where
 
                 // clear waker
 
-                Self::clear_waker(tx, application, thing, uid, resource_version).await?;
+                Self::clear_waker(tx, application, thing, uid, resource_version, data).await?;
 
                 // done with this entry
 
@@ -215,9 +223,14 @@ where
         thing: String,
         uid: Uuid,
         resource_version: Uuid,
+        mut data: Data,
     ) -> anyhow::Result<()> {
         // we clear the waker and commit the transaction. The oplock should hold, as we have locked
         // the record.
+
+        if let Some(internal) = &mut data.internal {
+            internal.waker = None;
+        }
 
         let stmt = tx
             .prepare_typed_cached(
@@ -225,22 +238,34 @@ where
 UPDATE
     things
 SET
-    WAKER = NULL, WAKER_REASONS = NULL
+    WAKER = NULL,
+    DATA = $1
 WHERE
-        APPLICATION = $1
+        APPLICATION = $2
     AND
-        NAME = $2
+        NAME = $3
     AND
-        UID = $3
+        UID = $4
     AND
-        RESOURCE_VERSION = $4
+        RESOURCE_VERSION = $5
 "#,
-                &[Type::VARCHAR, Type::VARCHAR, Type::UUID, Type::UUID],
+                &[
+                    Type::JSON,
+                    Type::VARCHAR,
+                    Type::VARCHAR,
+                    Type::UUID,
+                    Type::UUID,
+                ],
             )
             .await?;
 
+        let data = Json(&data);
+
         let result = tx
-            .execute(&stmt, &[&application, &thing, &uid, &resource_version])
+            .execute(
+                &stmt,
+                &[&data, &application, &thing, &uid, &resource_version],
+            )
             .await?;
 
         if result == 0 {

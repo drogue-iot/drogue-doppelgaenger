@@ -18,7 +18,6 @@ CREATE TABLE things (
 
     -- internal state (for easier access)
     WAKER TIMESTAMP WITH TIME ZONE NULL,
-    WAKER_REASONS JSONB NULL,
 
     -- constraints
     PRIMARY KEY (NAME, APPLICATION)
