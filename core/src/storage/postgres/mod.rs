@@ -234,7 +234,7 @@ INSERT INTO things (
     LABELS,
     DATA,
     WAKER,
-    WAKER_REASONS,
+    WAKER_REASONS
 ) VALUES (
     $1,
     $2,
