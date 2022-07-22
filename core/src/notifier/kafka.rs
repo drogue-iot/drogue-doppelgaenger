@@ -56,7 +56,7 @@ impl super::Notifier for Notifier {
     type Config = Config;
     type Error = Error;
 
-    fn new(config: &Self::Config) -> anyhow::Result<Self> {
+    fn from_config(config: &Self::Config) -> anyhow::Result<Self> {
         let topic = config.topic.clone();
         let timeout = Timeout::After(config.timeout);
         let config: rdkafka::ClientConfig = KafkaProperties(config.properties.clone()).into();

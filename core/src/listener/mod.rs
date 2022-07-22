@@ -75,7 +75,10 @@ impl KafkaSource {
 
         let topic = config.topic;
 
-        let config: rdkafka::ClientConfig = KafkaProperties(config.properties).into();
+        let mut config: rdkafka::ClientConfig = KafkaProperties(config.properties).into();
+
+        config.set("enable.partition.eof", "false");
+
         let consumer: StreamConsumer = config.create().context("Creating consumer")?;
 
         consumer.subscribe(&[&topic]).context("Start subscribe")?;
@@ -89,9 +92,6 @@ impl KafkaSource {
             consumer,
             inner: inner.clone(),
         };
-        //let consumer = Self::run(consumer, inner.clone());
-
-        //let task = Handle::current().spawn(consumer);
 
         Ok((Self { inner }, runner))
     }

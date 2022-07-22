@@ -9,3 +9,4 @@ pub mod processor;
 pub mod service;
 pub mod storage;
 pub mod version;
+pub mod waker;

@@ -19,6 +19,7 @@ pub enum Request {
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
 pub enum Response {
+    Initial { thing: Arc<Thing> },
     Change { thing: Arc<Thing> },
     Lag { lag: u64 },
 }

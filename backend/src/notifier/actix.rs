@@ -2,10 +2,10 @@ use super::{CLIENT_TIMEOUT, HEARTBEAT_INTERVAL};
 use crate::notifier::{Request, Response};
 use actix::{Actor, ActorContext, AsyncContext, Handler, SpawnHandle, StreamHandler, WrapFuture};
 use actix_web_actors::ws::{self, CloseCode, CloseReason};
-use drogue_doppelgaenger_core::processor::source::Sink;
 use drogue_doppelgaenger_core::{
     listener::{KafkaSource, Message},
     notifier::Notifier,
+    processor::sink::Sink,
     service::{Id, Service},
     storage::Storage,
 };
@@ -174,37 +174,53 @@ impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Subscribe> for WebSocke
 
         let service = self.service.clone();
 
+        // subscribe first
         let mut source = self.source.subscribe(id.clone());
+
         let addr = ctx.address();
         let i = id.clone();
         let task = ctx.spawn(
             async move {
-                // read the initial state
-                // FIXME: filter out "not found"
-                if let Ok(thing) = service.get(id).await {
-                    let initial_generation = thing.metadata.generation;
-                    // send initial
-                    addr.do_send(message::Event(Response::Change {
-                        thing: Arc::new(thing),
-                    }));
+                // now read the initial state
+                let initial_generation = match service.get(&id).await {
+                    Ok(Some(thing)) => {
+                        let initial_generation = thing.metadata.generation;
+                        // send initial
+                        addr.do_send(message::Event(Response::Initial {
+                            thing: Arc::new(thing),
+                        }));
+                        initial_generation
+                    }
+                    Ok(None) => Some(0),
+                    Err(err) => {
+                        // stream closed
+                        addr.do_send(message::Close(Some(CloseReason {
+                            code: CloseCode::Abnormal,
+                            description: Some("Failed to read initial state".to_string()),
+                        })));
 
-                    while let Some(msg) = source.next().await {
-                        match msg {
-                            Ok(Message::Change(thing)) => {
-                                if thing.metadata.generation > initial_generation {
-                                    // prevent initial duplicates
-                                    addr.do_send(message::Event(Response::Change { thing }))
-                                } else {
-                                    log::info!("Suppressing duplicate generation change");
-                                }
-                            }
-                            Err(BroadcastStreamRecvError::Lagged(lag)) => {
-                                addr.do_send(message::Event(Response::Lag { lag }))
+                        log::warn!("Failed to read initial state: {err}");
+                        return;
+                    }
+                };
+
+                // and run the loop
+                while let Some(msg) = source.next().await {
+                    match msg {
+                        Ok(Message::Change(thing)) => {
+                            if thing.metadata.generation > initial_generation {
+                                // prevent initial duplicates
+                                addr.do_send(message::Event(Response::Change { thing }))
+                            } else {
+                                log::info!("Suppressing duplicate generation change");
                             }
                         }
+                        Err(BroadcastStreamRecvError::Lagged(lag)) => {
+                            addr.do_send(message::Event(Response::Lag { lag }))
+                        }
                     }
-                    log::warn!("Listener loop exited");
                 }
+                log::warn!("Listener loop exited");
 
                 // stream closed
                 addr.do_send(message::Close(Some(CloseReason {

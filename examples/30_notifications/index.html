@@ -58,8 +58,8 @@ a.drogue-thing-ref {
                     </div>
                     <ul class="list-group list-group-flush">
                         <li class="list-group-item d-flex" data-drogue-thing-reported-state="$refs">
-                            <div class="col-6 fw-bold">Devices</div>
-                            <div class="col-6" data-drogue-thing-render-refs></div>
+                            <div class="col-4 fw-bold">Devices</div>
+                            <div class="col-8" data-drogue-thing-render-refs></div>
                         </li>
                     </ul>
                     <div class="card-footer">
@@ -130,10 +130,10 @@ a.drogue-thing-ref {
                 }
             },
             labelsToPropertyStyle: (labels, name) => {
-                if ("overTemp" in labels && name === "temperature") {
+                if ("overTemp" in labels && name === "temp") {
                     return "error";
                 }
-                if ("highTemp" in labels && name === "temperature") {
+                if ("highTemp" in labels && name === "temp") {
                     return "warning";
                 }
             }

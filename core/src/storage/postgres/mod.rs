@@ -1,14 +1,15 @@
 mod utils;
 
-use crate::model::{Internal, Schema};
+use crate::model::{Internal, Schema, WakerReason};
 use crate::{
     model::{DesiredFeature, Metadata, Reconciliation, ReportedFeature, SyntheticFeature, Thing},
-    storage::{self, UpdateError},
+    storage::{self},
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::{PoolError, Runtime};
-use std::{collections::BTreeMap, future::Future};
+use postgres_types::Type;
+use std::collections::BTreeMap;
 use tokio_postgres::{
     error::SqlState,
     types::{Json, ToSql},
@@ -32,6 +33,8 @@ pub struct ThingEntity {
     pub annotations: BTreeMap<String, String>,
 
     pub data: Data,
+
+    pub waker: Option<DateTime<Utc>>,
 }
 
 /// The persisted data field
@@ -80,6 +83,8 @@ impl TryFrom<Row> for ThingEntity {
             labels: utils::row_to_map(&row, "LABELS")?,
             annotations: utils::row_to_map(&row, "ANNOTATIONS")?,
             data: row.try_get::<_, Json<_>>("DATA")?.0,
+
+            waker: row.try_get("WAKER")?,
         })
     }
 }
@@ -114,7 +119,7 @@ impl super::Storage for Storage {
     type Config = Config;
     type Error = Error;
 
-    fn new(config: &Self::Config) -> anyhow::Result<Self> {
+    fn from_config(config: &Self::Config) -> anyhow::Result<Self> {
         let pool = config.postgres.create_pool(
             Some(Runtime::Tokio1),
             postgres_native_tls::MakeTlsConnector::new(native_tls::TlsConnector::new()?),
@@ -123,13 +128,17 @@ impl super::Storage for Storage {
         Ok(Self { application, pool })
     }
 
-    async fn get(&self, application: &str, name: &str) -> Result<Thing> {
-        self.ensure_app(application, || storage::Error::NotFound)?;
+    async fn get(&self, application: &str, name: &str) -> Result<Option<Thing>> {
+        if let Err(storage::Error::NotFound) =
+            self.ensure_app(application, || storage::Error::NotFound)
+        {
+            return Ok(None);
+        }
 
         let con = self.pool.get().await.map_err(Error::Pool)?;
 
-        match con
-            .query_opt(
+        let stmt = con
+            .prepare_typed_cached(
                 r#"
 SELECT
     UID,
@@ -138,7 +147,8 @@ SELECT
     RESOURCE_VERSION,
     ANNOTATIONS,
     LABELS,
-    DATA
+    DATA,
+    WAKER
 FROM
     THINGS
 WHERE
@@ -146,14 +156,22 @@ WHERE
     AND
         APPLICATION = $2 
 "#,
-                &[&name, &application],
+                &[
+                    Type::VARCHAR, // name
+                    Type::VARCHAR, // application
+                ],
             )
+            .await
+            .map_err(Error::Postgres)?;
+
+        match con
+            .query_opt(&stmt, &[&name, &application])
             .await
             .map_err(Error::Postgres)?
         {
             Some(row) => {
                 let entity: ThingEntity = row.try_into()?;
-                Ok(Thing {
+                Ok(Some(Thing {
                     metadata: Metadata {
                         name: name.to_string(),
                         application: application.to_string(),
@@ -171,7 +189,7 @@ WHERE
                     synthetic_state: entity.data.synthetic_state,
                     reconciliation: entity.data.reconciliation,
                     internal: entity.data.internal,
-                })
+                }))
             }
             None => Err(storage::Error::NotFound),
         }
@@ -192,6 +210,8 @@ WHERE
         thing.metadata.generation = Some(generation as u32);
         thing.metadata.resource_version = Some(resource_version.to_string());
 
+        let (waker, waker_reasons) = waker_data(&thing);
+
         log::debug!(
             "Creating new thing: {} / {}",
             thing.metadata.application,
@@ -200,8 +220,9 @@ WHERE
 
         let data: Data = (&thing).into();
 
-        con.execute(
-            r#"
+        let stmt = con
+            .prepare_typed_cached(
+                r#"
 INSERT INTO things (
     NAME,
     APPLICATION,
@@ -211,7 +232,9 @@ INSERT INTO things (
     RESOURCE_VERSION,
     ANNOTATIONS,
     LABELS,
-    DATA
+    DATA,
+    WAKER,
+    WAKER_REASONS,
 ) VALUES (
     $1,
     $2,
@@ -221,9 +244,30 @@ INSERT INTO things (
     $6,
     $7,
     $8,
-    $9
+    $9,
+    $10,
+    $11
 )
 "#,
+                &[
+                    Type::VARCHAR,     // name
+                    Type::VARCHAR,     // application
+                    Type::UUID,        // uid
+                    Type::TIMESTAMPTZ, // creation timestamp
+                    Type::INT8,        // generation
+                    Type::UUID,        // resource version
+                    Type::JSON,        // annotations
+                    Type::JSONB,       // labels
+                    Type::JSON,        // data
+                    Type::TIMESTAMPTZ, // waker
+                    Type::JSONB,       // waker reasons
+                ],
+            )
+            .await
+            .map_err(Error::Postgres)?;
+
+        con.execute(
+            &stmt,
             &[
                 &thing.metadata.name,
                 &thing.metadata.application,
@@ -234,6 +278,8 @@ INSERT INTO things (
                 &Json(&thing.metadata.annotations),
                 &Json(&thing.metadata.labels),
                 &Json(data),
+                &waker,
+                &Json(&waker_reasons),
             ],
         )
         .await
@@ -253,6 +299,8 @@ INSERT INTO things (
         let name = &thing.metadata.name;
         let application = &thing.metadata.application;
 
+        let (waker, waker_reasons) = waker_data(&thing);
+
         log::debug!("Updating existing thing: {application} / {name}");
 
         let mut stmt = r#"
@@ -262,7 +310,9 @@ SET
     RESOURCE_VERSION = $3,
     ANNOTATIONS = $4,
     LABELS = $5,
-    DATA = $6
+    DATA = $6,
+    WAKER = $7,
+    WAKER_REASONS = $8
 WHERE
         NAME = $1
     AND
@@ -274,24 +324,38 @@ WHERE
         let data = Json(Data::from(&thing));
         let annotations = Json(&thing.metadata.annotations);
         let labels = Json(&thing.metadata.labels);
+        let waker_reasons = Json(&waker_reasons);
 
+        let mut types: Vec<Type> = Vec::new();
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
+        types.push(Type::VARCHAR);
         params.push(name);
+        types.push(Type::VARCHAR);
         params.push(application);
+        types.push(Type::UUID);
         params.push(&resource_version);
+        types.push(Type::JSON);
         params.push(&annotations);
+        types.push(Type::JSONB);
         params.push(&labels);
+        types.push(Type::JSON);
         params.push(&data);
+        types.push(Type::TIMESTAMPTZ);
+        params.push(&waker);
+        types.push(Type::JSONB);
+        params.push(&waker_reasons);
 
         if let Some(resource_version) = &thing.metadata.resource_version {
             stmt.push_str(&format!(
                 "    AND RESOURCE_VERSION::text=${}",
                 params.len() + 1
             ));
+            types.push(Type::TEXT);
             params.push(resource_version);
         }
         if let Some(uid) = &thing.metadata.uid {
             stmt.push_str(&format!("    AND UID::text=${}", params.len() + 1));
+            types.push(Type::TEXT);
             params.push(uid);
         }
 
@@ -301,6 +365,11 @@ RETURNING
     CREATION_TIMESTAMP, GENERATION, UID::text
 "#,
         );
+
+        let stmt = con
+            .prepare_typed_cached(&stmt, &types)
+            .await
+            .map_err(Error::Postgres)?;
 
         match con.query_opt(&stmt, &params).await {
             Ok(None) => Err(storage::Error::PreconditionFailed),
@@ -322,79 +391,42 @@ RETURNING
         }
     }
 
-    async fn patch<F, Fut, E>(
-        &self,
-        application: &str,
-        name: &str,
-        f: F,
-    ) -> std::result::Result<Thing, UpdateError<Self::Error, E>>
-    where
-        F: FnOnce(Thing) -> Fut + Send + Sync,
-        Fut: Future<Output = std::result::Result<Thing, E>> + Send + Sync,
-        E: Send + Sync,
-    {
-        self.ensure_app(application, || storage::Error::NotFound)?;
-
-        log::debug!("Updating existing thing: {application} / {name}");
-
-        let current_thing = self.get(application, name).await?;
-        // capture current metadata
-        let Metadata {
-            name,
-            application,
-            uid,
-            creation_timestamp,
-            resource_version,
-            generation,
-            annotations: _,
-            labels: _,
-        } = current_thing.metadata.clone();
-        let mut new_thing = f(current_thing.clone())
-            .await
-            .map_err(UpdateError::Mutator)?;
-
-        // override metadata which must not be changed by the caller
-        new_thing.metadata = Metadata {
-            name,
-            application,
-            uid,
-            creation_timestamp,
-            resource_version,
-            generation,
-            ..new_thing.metadata
-        };
-
-        if current_thing == new_thing {
-            // no change
-            return Ok(current_thing);
+    async fn delete(&self, application: &str, name: &str) -> Result<bool> {
+        if let Err(storage::Error::NotFound) =
+            self.ensure_app(application, || storage::Error::NotFound)
+        {
+            return Ok(false);
         }
-
-        // perform update
-
-        self.update(new_thing).await.map_err(UpdateError::Service)
-    }
-
-    async fn delete(&self, application: &str, name: &str) -> Result<()> {
-        self.ensure_app(application, || storage::Error::NotFound)?;
 
         let con = self.pool.get().await.map_err(Error::Pool)?;
 
         log::debug!("Deleting thing: {application} / {name}");
 
-        con.execute(
-            r#"
+        let stmt = con
+            .prepare_typed_cached(
+                r#"
 DELETE FROM things
 WHERE
         NAME = $1
     AND
         APPLICATION = $2
 "#,
-            &[&name, &application],
-        )
-        .await
-        .map_err(Error::Postgres)?;
+                &[
+                    Type::VARCHAR, // name
+                    Type::VARCHAR, // application
+                ],
+            )
+            .await
+            .map_err(Error::Postgres)?;
 
-        Ok(())
+        // FIXME: add uid and resource version
+
+        let rows = con
+            .execute(&stmt, &[&name, &application])
+            .await
+            .map_err(Error::Postgres)?;
+
+        Ok(rows > 0)
     }
 }
 
@@ -410,5 +442,18 @@ impl Storage {
             }
         }
         Ok(())
+    }
+}
+
+fn waker_data(thing: &Thing) -> (Option<DateTime<Utc>>, Option<Vec<WakerReason>>) {
+    // FIXME: use unzip_option once available
+    match thing
+        .internal
+        .as_ref()
+        .and_then(|i| i.waker.as_ref())
+        .map(|w| (w.when, w.why.iter().map(|r| *r).collect::<Vec<_>>()))
+    {
+        Some(w) => (Some(w.0), Some(w.1)),
+        None => (None, None),
     }
 }

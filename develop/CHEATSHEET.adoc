@@ -1,0 +1,15 @@
+= Cheatsheet
+
+== Connect to local postgres
+
+[source,shell]
+----
+env PGPASSWORD=admin123456 psql -h localhost -U admin drogue
+----
+
+== Update postgres directly
+
+[source,sql]
+----
+-- update things set data = jsonb_set(to_jsonb(data), '{internal, waker}', NULL);
+----

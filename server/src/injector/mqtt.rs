@@ -3,7 +3,7 @@ use crate::injector::{
     payload::PayloadMapper,
 };
 use anyhow::{bail, Context};
-use drogue_doppelgaenger_core::processor::{source::Sink, Event};
+use drogue_doppelgaenger_core::processor::{sink::Sink, Event};
 use rumqttc::{
     AsyncClient, EventLoop, Incoming, MqttOptions, QoS, SubscribeReasonCode, TlsConfiguration,
     Transport,
