@@ -1,6 +1,6 @@
 mod utils;
 
-use crate::model::{Internal, Schema, WakerReason};
+use crate::model::{Internal, Schema};
 use crate::{
     model::{DesiredFeature, Metadata, Reconciliation, ReportedFeature, SyntheticFeature, Thing},
     storage::{self},
@@ -210,7 +210,7 @@ WHERE
         thing.metadata.generation = Some(generation as u32);
         thing.metadata.resource_version = Some(resource_version.to_string());
 
-        let (waker, waker_reasons) = waker_data(&thing);
+        let waker = waker_data(&thing);
 
         log::debug!(
             "Creating new thing: {} / {}",
@@ -233,8 +233,7 @@ INSERT INTO things (
     ANNOTATIONS,
     LABELS,
     DATA,
-    WAKER,
-    WAKER_REASONS
+    WAKER
 ) VALUES (
     $1,
     $2,
@@ -245,8 +244,7 @@ INSERT INTO things (
     $7,
     $8,
     $9,
-    $10,
-    $11
+    $10
 )
 "#,
                 &[
@@ -260,7 +258,6 @@ INSERT INTO things (
                     Type::JSONB,       // labels
                     Type::JSON,        // data
                     Type::TIMESTAMPTZ, // waker
-                    Type::JSONB,       // waker reasons
                 ],
             )
             .await
@@ -279,7 +276,6 @@ INSERT INTO things (
                 &Json(&thing.metadata.labels),
                 &Json(data),
                 &waker,
-                &Json(&waker_reasons),
             ],
         )
         .await
@@ -299,7 +295,7 @@ INSERT INTO things (
         let name = &thing.metadata.name;
         let application = &thing.metadata.application;
 
-        let (waker, waker_reasons) = waker_data(&thing);
+        let waker = waker_data(&thing);
 
         log::debug!("Updating existing thing: {application} / {name}");
 
@@ -311,8 +307,7 @@ SET
     ANNOTATIONS = $4,
     LABELS = $5,
     DATA = $6,
-    WAKER = $7,
-    WAKER_REASONS = $8
+    WAKER = $7
 WHERE
         NAME = $1
     AND
@@ -324,7 +319,6 @@ WHERE
         let data = Json(Data::from(&thing));
         let annotations = Json(&thing.metadata.annotations);
         let labels = Json(&thing.metadata.labels);
-        let waker_reasons = Json(&waker_reasons);
 
         let mut types: Vec<Type> = Vec::new();
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
@@ -342,8 +336,6 @@ WHERE
         params.push(&data);
         types.push(Type::TIMESTAMPTZ);
         params.push(&waker);
-        types.push(Type::JSONB);
-        params.push(&waker_reasons);
 
         if let Some(resource_version) = &thing.metadata.resource_version {
             stmt.push_str(&format!(
@@ -445,15 +437,10 @@ impl Storage {
     }
 }
 
-fn waker_data(thing: &Thing) -> (Option<DateTime<Utc>>, Option<Vec<WakerReason>>) {
-    // FIXME: use unzip_option once available
-    match thing
+fn waker_data(thing: &Thing) -> Option<DateTime<Utc>> {
+    thing
         .internal
         .as_ref()
         .and_then(|i| i.waker.as_ref())
-        .map(|w| (w.when, w.why.iter().map(|r| *r).collect::<Vec<_>>()))
-    {
-        Some(w) => (Some(w.0), Some(w.1)),
-        None => (None, None),
-    }
+        .map(|w| w.when)
 }

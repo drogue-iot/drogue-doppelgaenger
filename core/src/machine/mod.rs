@@ -182,9 +182,11 @@ async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Ou
                 // FIXME: record error (if any)
 
                 new_thing = outgoing.new_thing;
+                // record the log
                 if let Some(rec) = new_thing.reconciliation.changed.get_mut(&name) {
                     rec.last_log = outgoing.log;
                 }
+                // schedule the waker
                 if let Some(duration) = outgoing.waker {
                     new_thing.wakeup(duration, WakerReason::Reconcile);
                 }
