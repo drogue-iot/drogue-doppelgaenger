@@ -24,11 +24,14 @@ const KEY_WAKER: &str = "waker";
 /// TODO: consider keeping the runtime for this run.
 pub async fn run(
     name: String,
-    script: String,
+    script: &str,
     current_thing: Arc<Thing>,
-    new_thing: Thing,
+    new_thing: &Thing,
     opts: DenoOptions,
 ) -> anyhow::Result<Outgoing> {
+    let script = script.to_string();
+    let new_thing = new_thing.clone();
+
     let thing = Handle::current()
         .spawn_blocking(move || {
             // disable some operations
@@ -62,7 +65,7 @@ pub async fn run(
                 isolate.terminate_execution();
             });
 
-            set_context(&mut runtime, &current_thing, new_thing)?;
+            set_context(&mut runtime, &current_thing, &new_thing)?;
 
             // FIXME: take return value
             let _ = runtime.execute_script(&name, &script)?;
@@ -81,7 +84,7 @@ pub async fn run(
 fn set_context(
     runtime: &mut JsRuntime,
     current_state: &Thing,
-    new_state: Thing,
+    new_state: &Thing,
 ) -> anyhow::Result<()> {
     let global = runtime.global_context();
     let scope = &mut runtime.handle_scope();
@@ -138,7 +141,7 @@ fn extract_context(runtime: &mut JsRuntime) -> anyhow::Result<Outgoing> {
         }
     };
 
-    let log = {
+    let logs = {
         let key = serde_v8::to_v8(&mut scope, KEY_LOGS)?;
         match global.get(scope, key) {
             Some(value) => serde_v8::from_v8(scope, value)?,
@@ -157,7 +160,7 @@ fn extract_context(runtime: &mut JsRuntime) -> anyhow::Result<Outgoing> {
     Ok(Outgoing {
         new_thing,
         outbox,
-        log,
+        logs,
         waker,
     })
 }

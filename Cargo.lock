@@ -860,6 +860,7 @@ dependencies = [
  "futures",
  "humantime",
  "humantime-serde",
+ "indexmap",
  "json-patch",
  "jsonschema",
  "lazy_static",
@@ -1376,6 +1377,7 @@ checksum = "10a35a97730320ffe8e2d410b5d3b69279b98d2c14bdb8b70ea89ecf7888d41e"
 dependencies = [
  "autocfg",
  "hashbrown",
+ "serde",
 ]
 
 [[package]]
@@ -2527,6 +2529,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dyn-clone",
+ "indexmap",
  "schemars_derive",
  "serde",
  "serde_json",

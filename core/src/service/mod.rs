@@ -2,12 +2,9 @@ mod error;
 mod id;
 mod updater;
 
-use chrono::{Duration, Utc};
 pub use error::*;
 pub use id::Id;
-use std::convert::Infallible;
 pub use updater::*;
-use uuid::Uuid;
 
 use crate::machine::{Machine, OutboxMessage, Outcome};
 use crate::model::{Thing, WakerExt, WakerReason};
@@ -15,12 +12,17 @@ use crate::notifier::Notifier;
 use crate::processor::sink::Sink;
 use crate::processor::Event;
 use crate::storage::{self, Storage};
+use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
+use uuid::Uuid;
 
 lazy_static! {
     static ref OUTBOX_EVENTS: IntCounter =
         register_int_counter!("outbox", "Number of generated outbox events").unwrap();
+    static ref NOT_CHANGED: IntCounter =
+        register_int_counter!("not_changed", "Number of events that didn't cause a change")
+            .unwrap();
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -44,27 +46,6 @@ pub struct Service<St: Storage, No: Notifier, Si: Sink> {
     storage: St,
     notifier: No,
     sink: Si,
-}
-
-pub trait Updater {
-    type Error: std::error::Error + 'static;
-
-    fn update(self, thing: Thing) -> Result<Thing, Self::Error>;
-}
-
-pub trait InfallibleUpdater {
-    fn update(self, thing: Thing) -> Thing;
-}
-
-impl<I> Updater for I
-where
-    I: InfallibleUpdater,
-{
-    type Error = Infallible;
-
-    fn update(self, thing: Thing) -> Result<Thing, Self::Error> {
-        Ok(InfallibleUpdater::update(self, thing))
-    }
 }
 
 impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
@@ -116,6 +97,10 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
 
         // FIXME: handle error
 
+        log::debug!("New thing created: {new_thing:?}");
+
+        // done
+
         Ok(new_thing)
     }
 
@@ -156,16 +141,16 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
             .await?;
 
         let outbox = Self::add_outbox(&mut new_thing, outbox);
+        OUTBOX_EVENTS.inc_by(outbox.len() as u64);
 
         // check diff after adding outbox events
         // TODO: maybe reconsider? if there is no state change? do we send out events? is an event a state change?
         if current_thing == new_thing {
             log::debug!("Thing state not changed. Return early!");
+            NOT_CHANGED.inc();
             // no change, nothing to do
             return Ok(current_thing);
         }
-
-        OUTBOX_EVENTS.inc_by(outbox.len() as u64);
 
         // store
 

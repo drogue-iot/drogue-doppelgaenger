@@ -21,6 +21,7 @@ env_logger = "0.9"
 futures = "0.3"
 humantime = "2"
 humantime-serde = "1"
+indexmap = "1.9"
 json-patch = { version = "0.2", default-features = false }
 jsonschema = "0.16"
 log = "0.4"
@@ -29,7 +30,7 @@ postgres-types = "0.2"
 rdkafka = { version = "0.28", features = ["sasl", "ssl"] }
 rustls = "0.20"
 rustls-native-certs = "0.6"
-schemars = { version = "0.8", features = ["bytes", "chrono"] }
+schemars = { version = "0.8", features = ["bytes", "chrono", "indexmap"] }
 serde = "1"
 serde_json = "1"
 thiserror = "1"

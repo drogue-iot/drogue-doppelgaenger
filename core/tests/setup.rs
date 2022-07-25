@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use drogue_doppelgaenger_core::model::WakerReason;
@@ -358,7 +360,7 @@ impl MockSourceFeeder {
     ///
     /// NOTE: This will block indefinitely, if the processor is not running!
     pub async fn send_wait(&self, event: Event) -> anyhow::Result<()> {
-        self.send(event).await?;
+        self.send(event).await?.await?;
         Ok(())
     }
 
@@ -438,7 +440,7 @@ impl Waker for MockWaker {
         loop {
             interval.tick().await;
 
-            log::debug!("MockWacker - ticking");
+            log::debug!("MockWaker - ticking");
 
             // this is a bit messy, might be improved with drain_filter
 
