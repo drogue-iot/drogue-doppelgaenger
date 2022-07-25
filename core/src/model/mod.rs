@@ -208,8 +208,10 @@ pub struct Timer {
     #[schemars(schema_with = "crate::schemars::humantime")]
     pub period: std::time::Duration,
     /// A flag to stop the timer
+    #[serde(default)]
     pub stopped: bool,
     /// the latest timestamp the timer was started
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_started: Option<DateTime<Utc>>,
     /// the timestamp the timer last ran
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -221,6 +223,7 @@ pub struct Timer {
     /// an optional, initial delay. if there is none, the time will be run the first time it is
     /// configured
     #[serde(with = "humantime_serde")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(schema_with = "crate::schemars::humantime")]
     pub initial_delay: Option<std::time::Duration>,
 }

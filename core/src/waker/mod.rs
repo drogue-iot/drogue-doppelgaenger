@@ -1,9 +1,10 @@
 pub mod postgres;
 
-use crate::model::WakerReason;
-use crate::processor::sink::Sink;
-use crate::processor::{Event, Message};
-use crate::service::Id;
+use crate::{
+    model::WakerReason,
+    processor::{sink::Sink, Event, Message},
+    service::Id,
+};
 use async_trait::async_trait;
 use std::future::Future;
 

@@ -920,6 +920,7 @@ dependencies = [
  "drogue-doppelgaenger-processor",
  "env_logger",
  "futures",
+ "humantime-serde",
  "log",
  "postgres-native-tls",
  "rdkafka",
