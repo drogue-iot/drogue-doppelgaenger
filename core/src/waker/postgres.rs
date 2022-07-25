@@ -15,11 +15,23 @@ use uuid::Uuid;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
     pub application: Option<String>,
+    #[serde(with = "humantime_serde")]
+    #[serde(default = "default::check_duration")]
+    pub check_period: Duration,
     pub postgres: deadpool_postgres::Config,
+}
+
+pub mod default {
+    use super::*;
+
+    pub const fn check_duration() -> Duration {
+        Duration::from_secs(1)
+    }
 }
 
 pub struct Waker {
     application: Option<String>,
+    check_period: Duration,
     pool: deadpool_postgres::Pool,
 }
 
@@ -35,6 +47,7 @@ impl super::Waker for Waker {
 
         Ok(Self {
             pool,
+            check_period: config.check_period,
             application: config.application,
         })
     }
@@ -44,7 +57,7 @@ impl super::Waker for Waker {
         F: Fn(TargetId, Vec<WakerReason>) -> Fut + Send + Sync,
         Fut: Future<Output = anyhow::Result<()>> + Send,
     {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        let mut interval = tokio::time::interval(self.check_period);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let stmt = self.build_statement();

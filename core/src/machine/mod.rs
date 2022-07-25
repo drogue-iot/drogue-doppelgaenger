@@ -7,15 +7,19 @@ use crate::model::{
 };
 use crate::processor::Message;
 use anyhow::anyhow;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use deno_core::url::Url;
 use indexmap::IndexMap;
 use jsonschema::{Draft, JSONSchema, SchemaResolver, SchemaResolverError};
+use lazy_static::lazy_static;
+use prometheus::{register_histogram, Histogram};
 use serde_json::Value;
-use std::convert::Infallible;
-use std::fmt::Debug;
-use std::future::Future;
-use std::sync::Arc;
+use std::{convert::Infallible, fmt::Debug, future::Future, sync::Arc};
+
+lazy_static! {
+    static ref TIMER_DELAY: Histogram =
+        register_histogram!("timer_delay", "Amount of time by which timers are delayed").unwrap();
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -247,11 +251,11 @@ impl Reconciler {
                     match (timer.last_run, timer.initial_delay) {
                         (Some(last_run), _) => {
                             // timer already ran, check if it is due again
-                            Some(
-                                last_run
-                                    + Duration::from_std(timer.period)
-                                        .unwrap_or(Duration::max_value()),
-                            )
+                            Some(Self::find_next_run_from(
+                                last_started,
+                                timer.period,
+                                last_run,
+                            ))
                         }
                         (None, None) => {
                             // timer never ran, and there is no delay, run now
@@ -270,19 +274,23 @@ impl Reconciler {
             };
 
             if let Some(due) = due {
-                let next_run = if due < Utc::now() {
+                let diff = Utc::now() - due;
+
+                let next_run = if diff >= Duration::zero() {
+                    log::debug!("Late by: {diff}");
+                    TIMER_DELAY.observe(diff.num_milliseconds() as f64);
+
+                    let now = Utc::now();
+
                     self.run_code(format!("timer-{}", name), &timer.code)
                         .await?;
 
-                    let now = Utc::now();
-                    timer.last_run = Some(now);
+                    let next_run =
+                        Self::find_next_run(timer.last_started.unwrap_or(now), timer.period);
 
-                    // advance until we find the next spot, true there is a better way
-                    let mut next_run = now;
-                    let d = Duration::from_std(timer.period).unwrap_or(Duration::max_value());
-                    while next_run < Utc::now() {
-                        next_run = next_run + d;
-                    }
+                    log::info!("Next run: {next_run}");
+
+                    timer.last_run = Some(now);
 
                     next_run
                 } else {
@@ -335,6 +343,28 @@ impl Reconciler {
             }
         }
     }
+
+    fn find_next_run_from(
+        last_started: DateTime<Utc>,
+        period: std::time::Duration,
+        now: DateTime<Utc>,
+    ) -> DateTime<Utc> {
+        let period_ms = period.as_millis().clamp(0, u32::MAX as u128) as u32;
+        let diff = (now - last_started).num_milliseconds();
+
+        if diff < 0 {
+            return Utc::now();
+        }
+
+        let diff = diff.clamp(0, u32::MAX as i64) as u32;
+        let periods = (diff / period_ms) + 1;
+
+        last_started + Duration::milliseconds((periods * period_ms) as i64)
+    }
+
+    fn find_next_run(last_started: DateTime<Utc>, period: std::time::Duration) -> DateTime<Utc> {
+        Self::find_next_run_from(last_started, period, Utc::now())
+    }
 }
 
 pub struct ExecutionResult {
@@ -355,6 +385,7 @@ mod test {
     use crate::model::{Metadata, ReportedFeature};
     use chrono::{DateTime, TimeZone, Utc};
     use std::collections::BTreeMap;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_create() {
@@ -460,5 +491,30 @@ mod test {
             reconciliation: Default::default(),
             internal: Default::default(),
         }
+    }
+
+    #[test]
+    fn test_next() {
+        assert_next((0, 0, 0), (0, 1, 0), 1, (0, 1, 1));
+        assert_next((0, 0, 0), (0, 1, 2), 10, (0, 1, 10));
+        assert_next((0, 0, 0), (0, 0, 1), 1, (0, 0, 2));
+    }
+
+    fn assert_next(
+        started: (u32, u32, u32),
+        now: (u32, u32, u32),
+        period: u64,
+        expected: (u32, u32, u32),
+    ) {
+        let day = Utc.ymd(2022, 1, 1);
+
+        assert_eq!(
+            Reconciler::find_next_run_from(
+                day.and_hms(started.0, started.1, started.2),
+                Duration::from_secs(period),
+                day.and_hms(now.0, now.1, now.2)
+            ),
+            day.and_hms(expected.0, expected.1, expected.2)
+        );
     }
 }

@@ -23,6 +23,7 @@ use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     config::FromClientConfig,
 };
+use std::time::Duration;
 use tokio::runtime::Handle;
 
 embed_migrations!("../database-migration/migrations");
@@ -46,6 +47,10 @@ pub struct Server {
     /// optional injector
     #[serde(default)]
     injector: Option<injector::Config>,
+
+    #[serde(with = "humantime_serde")]
+    #[serde(default = "waker::postgres::default::check_duration")]
+    check_duration: Duration,
 }
 
 mod default {
@@ -109,8 +114,8 @@ async fn main() -> anyhow::Result<()> {
     .await
     .unwrap();
     create_topic(
-        KafkaProperties(server.event_source.properties.clone()),
-        server.event_source.topic.clone(),
+        KafkaProperties(server.event_sink.properties.clone()),
+        server.event_sink.topic.clone(),
     )
     .await
     .unwrap();
@@ -170,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
         waker: waker::postgres::Config {
             application: server.application,
             postgres: server.db,
+            check_period: server.check_duration,
         },
         sink: server.event_sink,
     })?
