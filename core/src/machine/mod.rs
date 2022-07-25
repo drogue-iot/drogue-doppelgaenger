@@ -1,11 +1,15 @@
 mod deno;
 
 use crate::machine::deno::DenoOptions;
-use crate::model::{Code, JsonSchema, Metadata, Schema, Thing, ThingState, WakerExt, WakerReason};
+use crate::model::{
+    Changed, Code, JsonSchema, Metadata, Reconciliation, Schema, Thing, ThingState, Timer,
+    WakerExt, WakerReason,
+};
 use crate::processor::Message;
 use anyhow::anyhow;
-use chrono::Duration;
+use chrono::{Duration, Utc};
 use deno_core::url::Url;
+use indexmap::IndexMap;
 use jsonschema::{Draft, JSONSchema, SchemaResolver, SchemaResolverError};
 use serde_json::Value;
 use std::convert::Infallible;
@@ -25,6 +29,7 @@ pub enum Error {
     Internal(#[source] anyhow::Error),
 }
 
+/// The state machine runner. Good for a single run of updates.
 pub struct Machine {
     thing: Thing,
 }
@@ -42,12 +47,18 @@ impl Machine {
     pub async fn create(new_thing: Thing) -> Result<Outcome, Error> {
         // Creating means that we start with an empty thing, and then set the initial state.
         // This allows to run through the reconciliation initially.
-        Self::new(Thing::new(
+        let outcome = Self::new(Thing::new(
             &new_thing.metadata.application,
             &new_thing.metadata.name,
         ))
         .update(|_| async { Ok::<_, Infallible>(new_thing) })
-        .await
+        .await?;
+
+        // validate the outcome
+        Self::validate(&outcome.new_thing)?;
+
+        // done
+        Ok(outcome)
     }
 
     pub async fn update<F, Fut, E>(self, f: F) -> Result<Outcome, Error>
@@ -81,42 +92,17 @@ impl Machine {
 
         log::debug!("New state (post-update: {new_thing:?}");
 
-        // validate the outcome
-
-        match &new_thing.schema {
-            Some(Schema::Json(schema)) => match schema {
-                JsonSchema::Draft7(schema) => {
-                    let compiled = JSONSchema::options()
-                        .with_draft(Draft::Draft7)
-                        .with_resolver(RejectResolver)
-                        .compile(schema)
-                        .map_err(|err| {
-                            Error::Validation(anyhow!("Failed to compile schema: {err}"))
-                        })?;
-
-                    let state: ThingState = (&new_thing).into();
-
-                    if !compiled.is_valid(&serde_json::to_value(&state).map_err(|err| {
-                        Error::Internal(
-                            anyhow::Error::from(err).context("Failed serializing thing state"),
-                        )
-                    })?) {
-                        return Err(Error::Validation(anyhow!(
-                            "New state did not validate against configured schema"
-                        )));
-                    }
-                }
-            },
-            None => {}
-        }
-
-        log::debug!("New state (post-validate: {new_thing:?}");
-
         // reconcile the result
 
-        let Outcome { new_thing, outbox } = reconcile(original_thing, new_thing).await?;
+        let Outcome { new_thing, outbox } =
+            Reconciler::new(original_thing, new_thing).run().await?;
 
         log::debug!("New state (post-reconcile: {new_thing:?}");
+
+        // validate the outcome
+        Self::validate(&new_thing)?;
+
+        log::debug!("New state (post-validate: {new_thing:?}");
 
         // reapply the captured metadata
 
@@ -137,6 +123,37 @@ impl Machine {
 
         Ok(Outcome { new_thing, outbox })
     }
+
+    fn validate(new_thing: &Thing) -> Result<(), Error> {
+        match &new_thing.schema {
+            Some(Schema::Json(schema)) => match schema {
+                JsonSchema::Draft7(schema) => {
+                    let compiled = JSONSchema::options()
+                        .with_draft(Draft::Draft7)
+                        .with_resolver(RejectResolver)
+                        .compile(schema)
+                        .map_err(|err| {
+                            Error::Validation(anyhow!("Failed to compile schema: {err}"))
+                        })?;
+
+                    let state: ThingState = new_thing.into();
+
+                    if !compiled.is_valid(&serde_json::to_value(&state).map_err(|err| {
+                        Error::Internal(
+                            anyhow::Error::from(err).context("Failed serializing thing state"),
+                        )
+                    })?) {
+                        return Err(Error::Validation(anyhow!(
+                            "New state did not validate against configured schema"
+                        )));
+                    }
+                }
+            },
+            None => {}
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -149,54 +166,179 @@ pub struct OutboxMessage {
 pub struct Outgoing {
     pub new_thing: Thing,
     pub outbox: Vec<OutboxMessage>,
-    pub log: Vec<String>,
+    pub logs: Vec<String>,
     pub waker: Option<Duration>,
 }
 
-async fn reconcile(current_thing: Arc<Thing>, mut new_thing: Thing) -> Result<Outcome, Error> {
-    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(1);
+pub struct Reconciler {
+    deadline: tokio::time::Instant,
+    current_thing: Arc<Thing>,
+    new_thing: Thing,
+    outbox: Vec<OutboxMessage>,
+}
 
-    // clear old logs first, otherwise logging of state will continously grow
-    // FIXME: remove when we only send a view of the state to the reconcile code
-    for (_, v) in &mut new_thing.reconciliation.changed {
-        v.last_log.clear();
+impl Reconciler {
+    pub fn new(current_thing: Arc<Thing>, new_thing: Thing) -> Self {
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(1);
+
+        Self {
+            current_thing,
+            new_thing,
+            deadline,
+            outbox: Default::default(),
+        }
     }
 
-    let reconciliations = new_thing.reconciliation.clone();
+    pub async fn run(mut self) -> Result<Outcome, Error> {
+        // clear reconcile waker
+        self.new_thing.clear_wakeup(WakerReason::Reconcile);
 
-    let mut outbox = Vec::<OutboxMessage>::new();
+        // clear old logs first, otherwise logging of state will continuously grow
+        // FIXME: remove when we only send a view of the state to the reconcile code
+        for (_, v) in &mut self.new_thing.reconciliation.changed {
+            v.last_log.clear();
+        }
 
-    for (name, changed) in reconciliations.changed {
-        match changed.code {
+        // run code
+
+        let Reconciliation { changed, timers } = self.new_thing.reconciliation.clone();
+
+        self.reconcile_changed(changed).await?;
+        self.reconcile_timers(timers).await?;
+
+        Ok(Outcome {
+            new_thing: self.new_thing,
+            outbox: self.outbox,
+        })
+    }
+
+    async fn reconcile_changed(&mut self, changed: IndexMap<String, Changed>) -> Result<(), Error> {
+        for (name, mut changed) in changed {
+            let ExecutionResult { logs } = self
+                .run_code(format!("changed-{}", name), &changed.code)
+                .await?;
+
+            changed.last_log = logs;
+            self.new_thing.reconciliation.changed.insert(name, changed);
+        }
+
+        Ok(())
+    }
+
+    async fn reconcile_timers(&mut self, timers: IndexMap<String, Timer>) -> Result<(), Error> {
+        for (name, mut timer) in timers {
+            let due = match timer.stopped {
+                true => {
+                    // timer is stopped, just keep it stopped
+                    timer.last_started = None;
+                    None
+                }
+                false => {
+                    let last_started = match timer.last_started {
+                        None => {
+                            let now = Utc::now();
+                            timer.last_started = Some(now);
+                            now
+                        }
+                        Some(last_started) => last_started,
+                    };
+
+                    // now check if the timer is due
+                    match (timer.last_run, timer.initial_delay) {
+                        (Some(last_run), _) => {
+                            // timer already ran, check if it is due again
+                            Some(
+                                last_run
+                                    + Duration::from_std(timer.period)
+                                        .unwrap_or(Duration::max_value()),
+                            )
+                        }
+                        (None, None) => {
+                            // timer never ran, and there is no delay, run now
+                            Some(Utc::now())
+                        }
+                        (None, Some(initial_delay)) => {
+                            // timer never ran, check it the first run is due
+                            Some(
+                                last_started
+                                    + Duration::from_std(initial_delay)
+                                        .unwrap_or(Duration::max_value()),
+                            )
+                        }
+                    }
+                }
+            };
+
+            if let Some(due) = due {
+                let next_run = if due < Utc::now() {
+                    self.run_code(format!("timer-{}", name), &timer.code)
+                        .await?;
+
+                    let now = Utc::now();
+                    timer.last_run = Some(now);
+
+                    // advance until we find the next spot, true there is a better way
+                    let mut next_run = now;
+                    let d = Duration::from_std(timer.period).unwrap_or(Duration::max_value());
+                    while next_run < Utc::now() {
+                        next_run = next_run + d;
+                    }
+
+                    next_run
+                } else {
+                    due
+                };
+
+                self.new_thing.wakeup_at(next_run, WakerReason::Reconcile);
+            }
+
+            self.new_thing.reconciliation.timers.insert(name, timer);
+        }
+
+        Ok(())
+    }
+
+    async fn run_code(&mut self, name: String, code: &Code) -> Result<ExecutionResult, Error> {
+        match code {
             Code::Script(script) => {
                 let outgoing = deno::run(
-                    format!("reconcile-changed-{}", name),
-                    script,
-                    current_thing.clone(),
-                    new_thing,
-                    DenoOptions { deadline },
+                    name,
+                    &script,
+                    self.current_thing.clone(),
+                    &self.new_thing,
+                    DenoOptions {
+                        deadline: self.deadline,
+                    },
                 )
                 .await
                 .map_err(Error::Reconcile)?;
 
                 // FIXME: record error (if any)
 
-                new_thing = outgoing.new_thing;
-                // record the log
-                if let Some(rec) = new_thing.reconciliation.changed.get_mut(&name) {
-                    rec.last_log = outgoing.log;
-                }
-                // schedule the waker
-                if let Some(duration) = outgoing.waker {
+                let Outgoing {
+                    mut new_thing,
+                    waker,
+                    outbox,
+                    logs,
+                } = outgoing;
+
+                // schedule the waker, in the new state
+                if let Some(duration) = waker {
                     new_thing.wakeup(duration, WakerReason::Reconcile);
                 }
+                // set the new state
+                self.new_thing = new_thing;
+                // extend outbox
+                self.outbox.extend(outbox);
 
-                outbox.extend(outgoing.outbox);
+                Ok(ExecutionResult { logs })
             }
         }
     }
+}
 
-    Ok(Outcome { new_thing, outbox })
+pub struct ExecutionResult {
+    pub logs: Vec<String>,
 }
 
 pub struct RejectResolver;
@@ -218,9 +360,20 @@ mod test {
     async fn test_create() {
         let Outcome { new_thing, outbox } = Machine::create(test_thing()).await.unwrap();
 
+        // When creating, the machine will start with an empty thing, which doesn't have any
+        // resource information. The machine will also ensure that this internal metadata is not
+        // overridden externally. So the outcome must be, that the information is missing.
+        let metadata = Metadata {
+            uid: None,
+            creation_timestamp: None,
+            resource_version: None,
+            generation: None,
+            ..test_metadata()
+        };
+
         assert_eq!(
             Thing {
-                metadata: test_metadata(),
+                metadata,
                 schema: None,
                 reported_state: Default::default(),
                 desired_state: Default::default(),

@@ -1,11 +1,31 @@
 use crate::model::{Reconciliation, ReportedFeature, Thing};
-use crate::service::{InfallibleUpdater, Updater};
 use chrono::Utc;
 use serde_json::Value;
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
+use std::convert::Infallible;
 
 pub use json_patch::Patch;
+
+pub trait Updater {
+    type Error: std::error::Error + 'static;
+
+    fn update(self, thing: Thing) -> Result<Thing, Self::Error>;
+}
+
+pub trait InfallibleUpdater {
+    fn update(self, thing: Thing) -> Thing;
+}
+
+impl<I> Updater for I
+where
+    I: InfallibleUpdater,
+{
+    type Error = Infallible;
+
+    fn update(self, thing: Thing) -> Result<Thing, Self::Error> {
+        Ok(InfallibleUpdater::update(self, thing))
+    }
+}
 
 pub enum UpdateMode {
     Merge,
@@ -108,5 +128,47 @@ impl Updater for JsonMergeUpdater {
         let mut json = serde_json::to_value(thing)?;
         json_patch::merge(&mut json, &self.0);
         Ok(serde_json::from_value(json)?)
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::InfallibleUpdater;
+    use super::*;
+    use serde_json::Value;
+
+    fn new_thing() -> Thing {
+        Thing::new("default", "test")
+    }
+
+    #[test]
+    fn test_repstate_merge_empty() {
+        let thing = new_thing();
+
+        let mut data = BTreeMap::<String, Value>::new();
+        data.insert("foo".into(), "bar".into());
+        let mut thing =
+            InfallibleUpdater::update(ReportedStateUpdater(data, UpdateMode::Merge), thing);
+
+        assert_eq!(
+            thing.reported_state.remove("foo").map(|s| s.value),
+            Some(Value::String("bar".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_repstate_replace_empty() {
+        let thing = new_thing();
+
+        let mut data = BTreeMap::<String, Value>::new();
+        data.insert("foo".into(), "bar".into());
+        let mut thing =
+            InfallibleUpdater::update(ReportedStateUpdater(data, UpdateMode::Replace), thing);
+
+        assert_eq!(
+            thing.reported_state.remove("foo").map(|s| s.value),
+            Some(Value::String("bar".to_string()))
+        );
     }
 }

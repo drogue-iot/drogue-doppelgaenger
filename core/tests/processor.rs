@@ -13,12 +13,14 @@ async fn test_process() {
         notifier,
         runner,
         ..
-    } = setup().run();
+    } = setup().run(false);
 
     let id = Id::new("default", "thing1");
     let thing = service.create(Thing::with_id(&id)).await.unwrap();
 
     assert_eq!(notifier.drain().await, vec![thing.clone()]);
+
+    log::debug!("Thing created, now update");
 
     // run a change
 
@@ -31,8 +33,9 @@ async fn test_process() {
         .await
         .unwrap();
 
+    // should see the change
     let thing = service.get(&id).await.unwrap().expect("Thing to be found");
-
+    // and get notified
     assert_eq!(notifier.drain().await, vec![thing.clone()]);
 
     assert_eq!(thing.metadata.generation, Some(2));

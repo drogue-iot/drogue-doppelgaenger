@@ -3,6 +3,7 @@ use crate::service::Id;
 use base64::STANDARD;
 use base64_serde::base64_serde_type;
 use chrono::{DateTime, Duration, Utc};
+use indexmap::IndexMap;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -162,13 +163,15 @@ pub enum JsonSchema {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct Reconciliation {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub changed: BTreeMap<String, Changed>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub changed: IndexMap<String, Changed>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub timers: IndexMap<String, Timer>,
 }
 
 impl Reconciliation {
     pub fn is_empty(&self) -> bool {
-        self.changed.is_empty()
+        self.changed.is_empty() && self.timers.is_empty()
     }
 }
 
@@ -188,6 +191,54 @@ impl From<Code> for Changed {
         Self {
             code,
             last_log: Default::default(),
+        }
+    }
+}
+
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct Timer {
+    /// the code to run
+    #[serde(flatten)]
+    pub code: Code,
+    /// the period the timer is scheduled
+    #[serde(with = "humantime_serde")]
+    #[schemars(schema_with = "crate::schemars::humantime")]
+    pub period: std::time::Duration,
+    /// A flag to stop the timer
+    pub stopped: bool,
+    /// the latest timestamp the timer was started
+    pub last_started: Option<DateTime<Utc>>,
+    /// the timestamp the timer last ran
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run: Option<DateTime<Utc>>,
+    /// the logs of the last run
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub last_log: Vec<String>,
+
+    /// an optional, initial delay. if there is none, the time will be run the first time it is
+    /// configured
+    #[serde(with = "humantime_serde")]
+    #[schemars(schema_with = "crate::schemars::humantime")]
+    pub initial_delay: Option<std::time::Duration>,
+}
+
+impl Timer {
+    pub fn new(
+        period: std::time::Duration,
+        initial_delay: Option<std::time::Duration>,
+        code: Code,
+    ) -> Self {
+        Self {
+            code,
+            last_log: Default::default(),
+            period: period.into(),
+            last_started: None,
+            last_run: None,
+            stopped: false,
+            initial_delay,
         }
     }
 }
@@ -265,19 +316,24 @@ pub struct Internal {
 }
 
 pub trait WakerExt {
-    fn wakeup(&mut self, delay: Duration, reason: WakerReason);
+    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason);
+
+    fn wakeup(&mut self, delay: Duration, reason: WakerReason) {
+        self.wakeup_at(Utc::now() + delay, reason);
+    }
+
     fn clear_wakeup(&mut self, reason: WakerReason);
 }
 
 impl WakerExt for Thing {
-    fn wakeup(&mut self, delay: Duration, reason: WakerReason) {
+    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
         match &mut self.internal {
             Some(internal) => {
-                internal.wakeup(delay, reason);
+                internal.wakeup_at(when, reason);
             }
             None => {
                 let mut internal = Internal::default();
-                internal.wakeup(delay, reason);
+                internal.wakeup_at(when, reason);
                 self.internal = Some(internal);
             }
         }
@@ -291,8 +347,7 @@ impl WakerExt for Thing {
 }
 
 impl WakerExt for Internal {
-    fn wakeup(&mut self, delay: Duration, reason: WakerReason) {
-        let when = Utc::now() + delay;
+    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
         match &mut self.waker {
             None => {
                 // no waker, just create it

@@ -1,8 +1,10 @@
 mod utils;
 
-use crate::model::{Internal, Schema};
 use crate::{
-    model::{DesiredFeature, Metadata, Reconciliation, ReportedFeature, SyntheticFeature, Thing},
+    model::{
+        DesiredFeature, Internal, Metadata, Reconciliation, ReportedFeature, Schema,
+        SyntheticFeature, Thing,
+    },
     storage::{self},
 };
 use async_trait::async_trait;
