@@ -147,10 +147,10 @@ class ThingCard {
         };
         this.connected = false;
         this.state = {};
-        this.#render();
         this.#subscription = this.thing.subscribe((event) => {
             this.#setState(event);
         })
+        this.#render();
     }
 
     dispose() {
@@ -161,16 +161,20 @@ class ThingCard {
 
     #setState(event) {
         console.debug("Event: ", event);
+        this.lastUpdate = new Date();
         switch (event.type) {
+            case "initial": {
+                this.connected = true;
+                this.state = event.thing;
+                break;
+            }
             case "change": {
                 this.connected = true;
-                this.lastUpdate = new Date();
                 this.state = event.thing;
                 break;
             }
             case "disconnected": {
                 this.connected = false;
-                this.lastUpdate = new Date();
                 break;
             }
             default: {
@@ -194,7 +198,7 @@ class ThingCard {
 
             // style
             const style = this.options.labelsToCardStyle(labels);
-            console.log("Style: ", style);
+            //console.debug("Style: ", style);
             switch (style) {
                 case "error": {
                     classes += "text-white bg-danger";
@@ -207,11 +211,11 @@ class ThingCard {
             }
 
             this.#card.attr('class', classes);
-            this.#card.find(".drogue-thing-sub-state").text(`Last Update: ${this.lastUpdate?.toISOString()}`)
+            this.#card.find(".drogue-thing-sub-state").text(`Last Update: ${timestampString(this.lastUpdate)}`)
 
         } else {
             this.#card.attr('class', "card text-white bg-secondary drogue-thing-sub-disconnected");
-            this.#card.find(".drogue-thing-sub-state").text(`Disconnected: ${this.lastUpdate?.toISOString()}`)
+            this.#card.find(".drogue-thing-sub-state").text(`Disconnected: ${timestampString(this.lastUpdate)}`)
         }
 
         const badges = $('<span></span>');
@@ -225,8 +229,34 @@ class ThingCard {
         }
         this.#card.find(".drogue-thing-flags").html(badges);
 
+        // all properties
+        this.#card.find("[data-drogue-thing-all-state]").each((idx, element) => {
+            const all = $(`<ul class="list-group list-group-flush"></ul>`);
+            for (const [key, value] of Object.entries(this.state?.reportedState || {})) {
+                // console.debug("Key:", key, " Value:", value);
+                const renderedValue = value.value === undefined ? $(`<i>undefined</i>`) : value.value;
+                if (this.options.showTimestamps) {
+                    const lastUpdate = makeDate(value?.lastUpdate);
+                    all.append($(`
+<li class="list-group-item d-flex">
+    <div class="col-4 fw-bold">${key}</div>
+    <div class="col-4 text-end">${renderedValue}</div>
+    <div class="col-4 text-muted ps-3 text-end">${timestampString(lastUpdate)}</div>
+</li>`))
+                } else {
+                    all.append($(`
+<li class="list-group-item d-flex">
+    <div class="col-6 fw-bold">${key}</div>
+    <div class="col-6">${renderedValue}</div>
+</li>`))
+                }
 
-        // properties
+            }
+            console.log(all);
+            $(element).html(all);
+        })
+
+        // individual properties
         this.#card.find("[data-drogue-thing-reported-state]").each((idx, element) => {
             element = $(element);
             const name = element.data("drogue-thing-reported-state");
@@ -264,7 +294,7 @@ class ThingCard {
                         content.append(unit);
                     }
                     if (this.options.showTimestamps) {
-                        content.append($(`<small class="text-muted">(${lastUpdate?.toISOString()})</small>`))
+                        content.append($(`<small class="text-muted">(${timestampString(lastUpdate)})</small>`))
                     }
                 } else {
                     content = $(`<i>unknown</i>`);
@@ -310,7 +340,7 @@ class ThingCard {
                         content.append(item);
                     }
                     if (this.options.showTimestamps) {
-                        content.append($(`<small class="text-muted">(${lastUpdate?.toISOString()})</small>`))
+                        content.append($(`<small class="text-muted">(${timestampString(lastUpdate)})</small>`))
                     }
                 } else {
                     content = $(`<i>none</i>`);
@@ -335,4 +365,17 @@ function makeDate(value) {
     } else {
         return undefined;
     }
+}
+
+// render a timestamp
+function timestampString(date) {
+    if (date === undefined) {
+        return "<unknown>";
+    }
+
+    return new Intl.DateTimeFormat([], {
+        year: "numeric", month: "numeric", day: "numeric",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        timeZoneName: "short"
+    }).format(date);
 }
