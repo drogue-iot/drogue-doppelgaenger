@@ -122,12 +122,15 @@
         });
     }
 
-    $('#btn-lookup').on('click', () => {
+    $('#btn-lookup').on('click', e => {
         showThing($('#lookup-thing-name').val());
+        $(e).blur();
     });
     $('#form-lookup').on('submit', e => {
         e.preventDefault();
-        showThing($('#lookup-thing-name').val());
+        const ele = $('#lookup-thing-name');
+        showThing(ele.val());
+        ele.blur();
     });
     $('body').on('keydown', e => {
         if (e.key === '/') {
