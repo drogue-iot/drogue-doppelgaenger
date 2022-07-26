@@ -252,7 +252,6 @@ class ThingCard {
                 }
 
             }
-            console.log(all);
             $(element).html(all);
         })
 
