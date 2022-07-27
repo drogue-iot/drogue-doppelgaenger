@@ -1,11 +1,10 @@
-use crate::error::ErrorInformation;
-use crate::notifier::Notifier;
 use crate::{
+    error::ErrorInformation,
     machine, notifier,
+    notifier::Notifier,
     storage::{self, Storage},
 };
-use actix_web::body::BoxBody;
-use actix_web::{HttpResponse, ResponseError};
+use actix_web::{body::BoxBody, HttpResponse, ResponseError};
 use std::fmt::{Debug, Formatter};
 
 #[derive(thiserror::Error)]
@@ -16,6 +15,8 @@ pub enum Error<S: Storage, N: Notifier> {
     Notifier(#[source] notifier::Error<N::Error>),
     #[error("State Machine: {0}")]
     Machine(#[from] machine::Error),
+    #[error("Unclean Outbox")]
+    UncleanOutbox,
 }
 
 impl<S: Storage, N: Notifier> Debug for Error<S, N> {
@@ -24,6 +25,7 @@ impl<S: Storage, N: Notifier> Debug for Error<S, N> {
             Self::Storage(err) => f.debug_tuple("Storage").field(err).finish(),
             Self::Notifier(err) => f.debug_tuple("Notifier").field(err).finish(),
             Self::Machine(err) => f.debug_tuple("Machine").field(err).finish(),
+            Self::UncleanOutbox => f.debug_tuple("UncleanOutbox").finish(),
         }
     }
 }

@@ -1,6 +1,4 @@
-mod setup;
-
-use crate::setup::{setup, RunningContext};
+use crate::common::mock::{setup, RunningContext};
 use drogue_doppelgaenger_core::model::Thing;
 use drogue_doppelgaenger_core::processor::{Event, Message};
 use drogue_doppelgaenger_core::service::Id;
@@ -10,7 +8,7 @@ use serde_json::json;
 async fn test_process() {
     let RunningContext {
         service,
-        notifier,
+        mut notifier,
         runner,
         ..
     } = setup().run(false);
@@ -28,7 +26,7 @@ async fn test_process() {
         .send_wait(Event::new(
             "default",
             "thing1",
-            Message::report_state().state("foo", "bar").build(),
+            Message::report_state(false).state("foo", "bar"),
         ))
         .await
         .unwrap();
@@ -48,7 +46,7 @@ async fn test_process() {
         .send_wait(Event::new(
             "default",
             "thing1",
-            Message::report_state().state("foo", "bar").build(),
+            Message::report_state(false).state("foo", "bar"),
         ))
         .await
         .unwrap();

@@ -1,6 +1,4 @@
-mod setup;
-
-use crate::setup::{setup, RunningContext};
+use crate::common::mock::{setup, RunningContext};
 use chrono::Utc;
 use drogue_doppelgaenger_core::model::{Code, Reconciliation, Thing, Timer, WakerReason};
 use drogue_doppelgaenger_core::service::Id;
@@ -13,7 +11,7 @@ use std::time::Duration;
 async fn test_process() {
     let RunningContext {
         service,
-        notifier,
+        mut notifier,
         runner,
         ..
     } = setup().run(true);
@@ -79,20 +77,8 @@ if (newState.reportedState?.["foo"] === undefined) {
 
     let thing = service.get(&id).await.unwrap().unwrap();
 
-    assert_eq!(
-        thing
-            .internal
-            .as_ref()
-            .unwrap()
-            .waker
-            .as_ref()
-            .unwrap()
-            .why
-            .clone()
-            .into_iter()
-            .collect::<Vec<_>>(),
-        &[WakerReason::Reconcile]
-    );
+    // waker expired, so it must be gone
+    assert!(thing.internal.clone().unwrap_or_default().waker.is_none());
 
     assert_eq!(thing.reported_state.get("foo").unwrap().value, json!("bar"));
 
@@ -107,7 +93,7 @@ if (newState.reportedState?.["foo"] === undefined) {
 async fn test_timer() {
     let RunningContext {
         service,
-        notifier,
+        mut notifier,
         runner,
         ..
     } = setup().run(true);
