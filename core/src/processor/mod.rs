@@ -1,6 +1,7 @@
 pub mod sink;
 pub mod source;
 
+use crate::service::UpdateOptions;
 use crate::{
     model::{Thing, WakerReason},
     notifier::Notifier,
@@ -73,38 +74,65 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn report_state() -> ReportStateBuilder {
-        Default::default()
+    pub fn report_state(partial: bool) -> ReportStateBuilder {
+        ReportStateBuilder::new(partial)
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ReportStateBuilder {
     state: BTreeMap<String, Value>,
     partial: bool,
 }
 
 impl ReportStateBuilder {
-    pub fn partial(mut self) -> Self {
-        self.partial = true;
-        self
+    pub fn new(partial: bool) -> Self {
+        Self {
+            state: Default::default(),
+            partial,
+        }
     }
 
-    pub fn full(mut self) -> Self {
-        self.partial = false;
-        self
+    pub fn partial() -> Self {
+        Self {
+            state: Default::default(),
+            partial: true,
+        }
+    }
+
+    pub fn full() -> Self {
+        Self {
+            state: Default::default(),
+            partial: false,
+        }
     }
 
     pub fn state<P: Into<String>, V: Into<Value>>(mut self, property: P, value: V) -> Self {
         self.state.insert(property.into(), value.into());
         self
     }
+}
 
-    pub fn build(self) -> Message {
+impl From<ReportStateBuilder> for Message {
+    fn from(builder: ReportStateBuilder) -> Self {
         Message::ReportState {
-            state: self.state,
-            partial: self.partial,
+            state: builder.state,
+            partial: builder.partial,
         }
+    }
+}
+
+impl From<ReportStateBuilder> for ReportedStateUpdater {
+    fn from(builder: ReportStateBuilder) -> Self {
+        ReportedStateUpdater(builder.state, UpdateMode::from_partial(builder.partial))
+    }
+}
+
+impl Updater for ReportStateBuilder {
+    type Error = <ReportedStateUpdater as Updater>::Error;
+
+    fn update(self, thing: Thing) -> Result<Thing, Self::Error> {
+        ReportedStateUpdater::from(self).update(thing)
     }
 }
 
@@ -150,6 +178,10 @@ where
                 log::debug!("Event: {event:?}");
                 EVENTS.inc();
 
+                let opts = UpdateOptions {
+                    ignore_unclean_inbox: false,
+                };
+
                 let _timer = PROCESSING_TIME.start_timer();
 
                 let Event {
@@ -165,7 +197,7 @@ where
                 };
 
                 loop {
-                    match self.service.update(&id, message.clone()).await {
+                    match self.service.update(&id, message.clone(), &opts).await {
                         Ok(_) => {
                             log::debug!("Processing complete ... ok!");
                             UPDATES.with_label_values(&["ok"]).inc();
@@ -244,11 +276,8 @@ impl Updater for Message {
             .update(thing)?),
             Message::Patch(patch) => Ok(JsonPatchUpdater(patch).update(thing)?),
             Message::Merge(merge) => Ok(JsonMergeUpdater(merge).update(thing)?),
-            Message::Wakeup { reasons } => {
-                log::info!("Wakeup: {reasons:?}");
-
-                // FIXME: we should handle the outbox reason differently
-
+            Message::Wakeup { reasons: _ } => {
+                // don't do any real change, this will just reconcile and process what is necessary
                 Ok(thing)
             }
         }

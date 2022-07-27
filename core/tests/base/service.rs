@@ -1,14 +1,19 @@
-mod setup;
-
-use crate::setup::Context;
+use crate::common::mock::{setup, Context};
 use drogue_doppelgaenger_core::model::{Metadata, Thing};
+use drogue_doppelgaenger_core::service::UpdateOptions;
 use std::collections::BTreeMap;
+
+const OPTS: UpdateOptions = UpdateOptions {
+    ignore_unclean_inbox: true,
+};
 
 #[tokio::test]
 async fn basic() {
     let Context {
-        service, notifier, ..
-    } = setup::setup();
+        service,
+        mut notifier,
+        ..
+    } = setup();
 
     service
         .create(Thing::new("default", "thing1"))
@@ -29,8 +34,10 @@ async fn basic() {
 #[tokio::test]
 async fn delete() {
     let Context {
-        service, notifier, ..
-    } = setup::setup();
+        service,
+        mut notifier,
+        ..
+    } = setup();
 
     service
         .create(Thing::new("default", "thing1"))
@@ -55,8 +62,10 @@ async fn delete() {
 #[tokio::test]
 async fn update() {
     let Context {
-        service, notifier, ..
-    } = setup::setup();
+        service,
+        mut notifier,
+        ..
+    } = setup();
 
     service
         .create(Thing::new("default", "thing1"))
@@ -88,7 +97,7 @@ async fn update() {
         ..thing.clone()
     };
 
-    let thing_1 = service.update(&id, thing_1).await.unwrap();
+    let thing_1 = service.update(&id, thing_1, &OPTS).await.unwrap();
 
     assert_eq!(notifier.drain().await, vec![thing_1.clone()]);
 
@@ -139,8 +148,10 @@ async fn update() {
 #[tokio::test]
 async fn update_no_change() {
     let Context {
-        service, notifier, ..
-    } = setup::setup();
+        service,
+        mut notifier,
+        ..
+    } = setup();
 
     service
         .create(Thing::new("default", "thing1"))
@@ -156,7 +167,7 @@ async fn update_no_change() {
 
     assert_eq!(notifier.drain().await, vec![thing.clone()]);
 
-    let thing_1 = service.update(&id, thing.clone()).await.unwrap();
+    let thing_1 = service.update(&id, thing.clone(), &OPTS).await.unwrap();
 
     assert_eq!(notifier.drain().await, vec![]);
 

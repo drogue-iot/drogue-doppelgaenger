@@ -1,19 +1,23 @@
-use crate::notifier::actix::WebSocketHandler;
-use crate::Instance;
+use crate::{notifier::actix::WebSocketHandler, Instance};
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-use drogue_doppelgaenger_core::processor::sink::Sink;
 use drogue_doppelgaenger_core::{
     listener::KafkaSource,
     model::{Reconciliation, Thing},
     notifier::Notifier,
+    processor::sink::Sink,
     service::{
         Id, JsonMergeUpdater, JsonPatchUpdater, Patch, ReportedStateUpdater, Service, UpdateMode,
+        UpdateOptions,
     },
     storage::Storage,
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+
+const OPTS: UpdateOptions = UpdateOptions {
+    ignore_unclean_inbox: true,
+};
 
 pub async fn things_get<S: Storage, N: Notifier, Si: Sink>(
     service: web::Data<Service<S, N, Si>>,
@@ -41,7 +45,9 @@ pub async fn things_update<S: Storage, N: Notifier, Si: Sink>(
     let thing = payload.metadata.name.clone();
     let payload = payload.into_inner();
 
-    service.update(&Id { application, thing }, payload).await?;
+    service
+        .update(&Id { application, thing }, payload, &OPTS)
+        .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }
@@ -54,7 +60,7 @@ pub async fn things_patch<S: Storage, N: Notifier, Si: Sink>(
     let payload = payload.into_inner();
 
     service
-        .update(&path.into_inner(), JsonPatchUpdater(payload))
+        .update(&path.into_inner(), JsonPatchUpdater(payload), &OPTS)
         .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
@@ -68,7 +74,7 @@ pub async fn things_merge<S: Storage, N: Notifier, Si: Sink>(
     let payload = payload.into_inner();
 
     service
-        .update(&path.into_inner(), JsonMergeUpdater(payload))
+        .update(&path.into_inner(), JsonMergeUpdater(payload), &OPTS)
         .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
@@ -85,6 +91,7 @@ pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink>(
         .update(
             &path.into_inner(),
             ReportedStateUpdater(payload, UpdateMode::Merge),
+            &OPTS,
         )
         .await?;
 
@@ -98,7 +105,7 @@ pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink>(
 ) -> Result<HttpResponse, actix_web::Error> {
     let payload = payload.into_inner();
 
-    service.update(&path.into_inner(), payload).await?;
+    service.update(&path.into_inner(), payload, &OPTS).await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }

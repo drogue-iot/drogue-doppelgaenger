@@ -1,21 +1,21 @@
 #![allow(unused)]
 
+use crate::common::failure::{Failure, FailureProvider};
+use anyhow::{anyhow, bail};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use drogue_doppelgaenger_core::model::WakerReason;
-use drogue_doppelgaenger_core::service::Id;
-use drogue_doppelgaenger_core::waker::{TargetId, Waker};
 use drogue_doppelgaenger_core::{
-    model::Thing,
+    model::{Thing, WakerReason},
     notifier::Notifier,
     processor::{sink::Sink, source::Source, Event, Processor},
-    service::Service,
+    service::{Id, Service},
     storage::{Error, Storage},
-    waker,
+    waker::{self, TargetId, Waker},
 };
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -78,6 +78,11 @@ impl Storage for MockStorage {
         // store
 
         let mut lock = self.things.write().await;
+
+        if lock.contains_key(&thing.metadata.name) {
+            return Err(Error::AlreadyExists);
+        }
+
         lock.insert(thing.metadata.name.clone(), thing.clone());
 
         // while still holding the lock
@@ -98,6 +103,21 @@ impl Storage for MockStorage {
 
         let result = match things.entry(thing.metadata.name.clone()) {
             Entry::Occupied(mut entry) => {
+                // check pre-conditions
+                match (&thing.metadata.uid, &entry.get().metadata.uid) {
+                    (None, _) => {}
+                    (Some(expected), Some(actual)) if expected == actual => {}
+                    _ => return Err(Error::PreconditionFailed),
+                }
+                match (
+                    &thing.metadata.resource_version,
+                    &entry.get().metadata.resource_version,
+                ) {
+                    (None, _) => {}
+                    (Some(expected), Some(actual)) if expected == actual => {}
+                    _ => return Err(Error::PreconditionFailed),
+                }
+
                 // immutable fields
                 thing.metadata.creation_timestamp = entry.get().metadata.creation_timestamp;
                 thing.metadata.uid = entry.get().metadata.uid.clone();
@@ -143,7 +163,7 @@ impl MockNotifier {
         }
     }
 
-    pub async fn drain(&self) -> Vec<Thing> {
+    pub async fn drain(&mut self) -> Vec<Thing> {
         let mut lock = self.events.write().await;
         lock.drain(..).collect()
     }
@@ -226,15 +246,17 @@ impl Source for MockSource {
 
 #[derive(Clone)]
 pub struct MockSink {
+    failure: Failure<(), anyhow::Error>,
     pub events: Arc<RwLock<Vec<Event>>>,
     tx: Sender<Event>,
     rx: Arc<Mutex<Option<Receiver<Event>>>>,
 }
 
 impl MockSink {
-    pub fn new() -> Self {
+    pub fn new(failure: Failure<(), anyhow::Error>) -> Self {
         let (tx, rx) = channel(100);
         Self {
+            failure,
             events: Arc::default(),
             tx,
             rx: Arc::new(Mutex::new(Some(rx))),
@@ -243,6 +265,10 @@ impl MockSink {
 
     async fn take_receiver(&self) -> Option<Receiver<Event>> {
         self.rx.lock().await.take()
+    }
+
+    pub async fn drain(&mut self) -> Vec<Event> {
+        self.events.write().await.drain(..).collect()
     }
 }
 
@@ -255,6 +281,10 @@ impl Sink for MockSink {
     }
 
     async fn publish(&self, event: Event) -> anyhow::Result<()> {
+        log::debug!("MockSink: {event:?}");
+
+        self.failure.failed(())?;
+
         self.tx.send(event.clone()).await?;
         self.events.write().await.push(event);
         Ok(())
@@ -475,33 +505,54 @@ impl Waker for MockWaker {
     }
 }
 
-pub fn setup() -> Context {
-    let _ = env_logger::builder().is_test(true).try_init();
+pub struct Builder {
+    sink_failure: Failure<(), anyhow::Error>,
+}
 
-    let sink = MockSink::new();
-    let source = MockSource::new();
-    let notifier = MockNotifier::new();
-
-    let waker = MockWaker::new();
-    let storage = MockStorage::new("default", waker.clone());
-
-    let processor = Processor::new(
-        Service::new(storage.clone(), notifier.clone(), sink.clone()),
-        source.clone(),
-    );
-
-    let waker = waker::Processor::new(waker, sink.clone());
-
-    let service = Service::new(storage.clone(), notifier.clone(), sink.clone());
-
-    let source = MockSourceFeeder { source };
-
-    Context {
-        sink,
-        service,
-        processor,
-        notifier,
-        source,
-        waker,
+impl Builder {
+    pub fn new() -> Self {
+        Self {
+            sink_failure: Default::default(),
+        }
     }
+
+    pub fn sink_failure(mut self, f: Failure<(), anyhow::Error>) -> Self {
+        self.sink_failure = f;
+        self
+    }
+
+    pub fn setup(self) -> Context {
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        let sink = MockSink::new(self.sink_failure.clone());
+        let source = MockSource::new();
+        let notifier = MockNotifier::new();
+
+        let waker = MockWaker::new();
+        let storage = MockStorage::new("default", waker.clone());
+
+        let processor = Processor::new(
+            Service::new(storage.clone(), notifier.clone(), sink.clone()),
+            source.clone(),
+        );
+
+        let waker = waker::Processor::new(waker, sink.clone());
+
+        let service = Service::new(storage.clone(), notifier.clone(), sink.clone());
+
+        let source = MockSourceFeeder { source };
+
+        Context {
+            sink,
+            service,
+            processor,
+            notifier,
+            source,
+            waker,
+        }
+    }
+}
+
+pub fn setup() -> Context {
+    Builder::new().setup()
 }

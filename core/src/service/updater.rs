@@ -32,6 +32,15 @@ pub enum UpdateMode {
     Replace,
 }
 
+impl UpdateMode {
+    pub fn from_partial(partial: bool) -> Self {
+        match partial {
+            true => Self::Merge,
+            false => Self::Replace,
+        }
+    }
+}
+
 pub struct ReportedStateUpdater(pub BTreeMap<String, Value>, pub UpdateMode);
 
 impl InfallibleUpdater for ReportedStateUpdater {
