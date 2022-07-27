@@ -2,8 +2,8 @@ mod deno;
 
 use crate::machine::deno::DenoOptions;
 use crate::model::{
-    Changed, Code, JsonSchema, Metadata, Reconciliation, Schema, Thing, ThingState, Timer,
-    WakerExt, WakerReason,
+    Changed, Code, JsonSchema, Metadata, Reconciliation, Schema, SyntheticType, Thing, ThingState,
+    Timer, WakerExt, WakerReason,
 };
 use crate::processor::Message;
 use anyhow::anyhow;
@@ -203,6 +203,9 @@ impl Reconciler {
             v.last_log.clear();
         }
 
+        // synthetics
+        self.generate_synthetics().await?;
+
         // run code
 
         let Reconciliation { changed, timers } = self.new_thing.reconciliation.clone();
@@ -214,6 +217,23 @@ impl Reconciler {
             new_thing: self.new_thing,
             outbox: self.outbox,
         })
+    }
+
+    async fn generate_synthetics(&mut self) -> Result<(), Error> {
+        let now = Utc::now();
+
+        let new_state = self.new_thing.clone();
+
+        for (name, mut syn) in &mut self.new_thing.synthetic_state {
+            let value =
+                Self::run_synthetic(&name, &syn.r#type, new_state.clone(), self.deadline).await?;
+            if syn.value != value {
+                syn.value = value;
+                syn.last_update = now;
+            }
+        }
+
+        Ok(())
     }
 
     async fn reconcile_changed(&mut self, changed: IndexMap<String, Changed>) -> Result<(), Error> {
@@ -308,7 +328,7 @@ impl Reconciler {
 
     async fn run_code(&mut self, name: String, code: &Code) -> Result<ExecutionResult, Error> {
         match code {
-            Code::Script(script) => {
+            Code::JavaScript(script) => {
                 let outgoing = deno::run(
                     name,
                     &script,
@@ -341,6 +361,37 @@ impl Reconciler {
 
                 Ok(ExecutionResult { logs })
             }
+        }
+    }
+
+    async fn run_synthetic(
+        name: &str,
+        r#type: &SyntheticType,
+        new_state: Thing,
+        deadline: tokio::time::Instant,
+    ) -> Result<Value, Error> {
+        match r#type {
+            SyntheticType::JavaScript(script) => {
+                #[derive(serde::Serialize)]
+                #[serde(rename_all = "camelCase")]
+                struct Input {
+                    new_state: Thing,
+                }
+
+                #[derive(Default, serde::Serialize, serde::Deserialize)]
+                struct Output {}
+
+                let out: deno::ExecutionResult<Output> =
+                    deno::execute(name, script, Input { new_state }, DenoOptions { deadline })
+                        .await
+                        .map_err(Error::Reconcile)?;
+
+                Ok(out.value)
+            }
+            SyntheticType::Alias(alias) => match new_state.reported_state.get(alias) {
+                Some(value) => Ok(value.value.clone()),
+                None => Ok(Value::Null),
+            },
         }
     }
 

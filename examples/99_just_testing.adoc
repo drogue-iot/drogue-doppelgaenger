@@ -7,8 +7,8 @@ http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default
 http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "A4:C1:38:0A:88:A8" }'
 http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "A4:C1:38:A2:6D:42" }'
 
-http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8/reconciliations 'changed[overTempGroup][script]=@20_reconcile/recon2.js'
-http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42/reconciliations 'changed[overTempGroup][script]=@20_reconcile/recon2.js'
+http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8/reconciliations 'changed[overTempGroup][javaScript]=@20_reconcile/recon2.js'
+http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42/reconciliations 'changed[overTempGroup][javaScript]=@20_reconcile/recon2.js'
 ----
 
 Nudge the conditions:

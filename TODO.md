@@ -6,3 +6,4 @@
 * [ ] Think about handling "by application" limitation.
 * [ ] RBAC
 * [ ] Allow a way to modify the thing, overriding a non-empty outbox
+* [ ] Implement WASM

@@ -77,6 +77,16 @@ pub fn configure<S: Storage, N: Notifier, Si: Sink>(
                     .route(web::put().to(endpoints::things_update_reported_state::<S, N, Si>)),
             );
             ctx.service(
+                web::resource(
+                    "/api/v1alpha1/things/{application}/things/{thing}/syntheticStates/{name}",
+                )
+                .route(web::put().to(endpoints::things_update_synthetic_state::<
+                    S,
+                    N,
+                    Si,
+                >)),
+            );
+            ctx.service(
                 web::resource("/api/v1alpha1/things/{application}/things/{thing}/reconciliations")
                     .route(web::put().to(endpoints::things_update_reconciliation::<S, N, Si>)),
             );

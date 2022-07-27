@@ -10,7 +10,7 @@ include::20_reconcile/recon1.js[]
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTemp][script]=@20_reconcile/recon1.js'
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTemp][javaScript]=@20_reconcile/recon1.js'
 ----
 
 Set over temp value:
@@ -37,5 +37,5 @@ include::20_reconcile/recon2.js[]
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTempGroup][script]=@20_reconcile/recon2.js'
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTempGroup][javaScript]=@20_reconcile/recon2.js'
 ----
