@@ -3,12 +3,12 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use drogue_doppelgaenger_core::{
     listener::KafkaSource,
-    model::{Reconciliation, Thing},
+    model::{Reconciliation, SyntheticType, Thing},
     notifier::Notifier,
     processor::sink::Sink,
     service::{
-        Id, JsonMergeUpdater, JsonPatchUpdater, Patch, ReportedStateUpdater, Service, UpdateMode,
-        UpdateOptions,
+        Id, JsonMergeUpdater, JsonPatchUpdater, Patch, ReportedStateUpdater, Service,
+        SyntheticStateUpdater, UpdateMode, UpdateOptions,
     },
     storage::Storage,
 };
@@ -91,6 +91,25 @@ pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink>(
         .update(
             &path.into_inner(),
             ReportedStateUpdater(payload, UpdateMode::Merge),
+            &OPTS,
+        )
+        .await?;
+
+    Ok(HttpResponse::NoContent().json(json!({})))
+}
+
+pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink>(
+    service: web::Data<Service<S, N, Si>>,
+    path: web::Path<(String, String, String)>,
+    payload: web::Json<SyntheticType>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let (application, thing, state) = path.into_inner();
+    let payload = payload.into_inner();
+
+    service
+        .update(
+            &Id::new(application, thing),
+            SyntheticStateUpdater(state, payload),
             &OPTS,
         )
         .await?;

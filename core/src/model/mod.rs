@@ -24,7 +24,7 @@ pub struct Thing {
     #[serde(default, skip_serializing_if = "Reconciliation::is_empty")]
     pub reconciliation: Reconciliation,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Internal::is_none_or_empty")]
     #[schemars(skip)]
     pub internal: Option<Internal>,
 }
@@ -250,14 +250,6 @@ impl Timer {
     Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "camelCase")]
-pub enum Code {
-    Script(String),
-}
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "camelCase")]
 pub struct ReportedFeature {
     pub last_update: DateTime<Utc>,
     pub value: Value,
@@ -287,9 +279,19 @@ pub struct DesiredFeature {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct SyntheticFeature {
-    pub script: Script,
+    #[serde(flatten)]
+    pub r#type: SyntheticType,
     pub last_update: DateTime<Utc>,
     pub value: Value,
+}
+
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum SyntheticType {
+    JavaScript(String),
+    Alias(String),
 }
 
 base64_serde_type!(Base64Standard, STANDARD);
@@ -298,15 +300,16 @@ base64_serde_type!(Base64Standard, STANDARD);
     Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "camelCase")]
-pub enum Script {
-    #[serde(rename = "javaScript")]
+pub enum Code {
     JavaScript(String),
+    // FIXME: implement wasm
+    /*
     #[serde(rename = "wasm")]
     WASM(
         #[serde(with = "Base64Standard")]
         #[schemars(with = "String")]
         Vec<u8>,
-    ),
+    ),*/
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -316,6 +319,16 @@ pub struct Internal {
     pub waker: Option<Waker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outbox: Vec<Event>,
+}
+
+impl Internal {
+    pub fn is_none_or_empty(internal: &Option<Self>) -> bool {
+        internal.as_ref().map(Internal::is_empty).unwrap_or(true)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.waker.is_none() & self.outbox.is_empty()
+    }
 }
 
 pub trait WakerExt {
@@ -404,6 +417,7 @@ pub enum WakerReason {
 #[cfg(test)]
 mod test {
     use super::*;
+    use chrono::TimeZone;
     use serde_json::json;
 
     #[test]
@@ -424,6 +438,35 @@ mod test {
                         "schema": {
                             "type": "object",
                         }
+                    }
+                }
+            }),
+            serde_json::to_value(thing).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_ser_syn() {
+        let mut thing = Thing::new("app", "thing");
+        thing.synthetic_state.insert(
+            "foo".to_string(),
+            SyntheticFeature {
+                r#type: SyntheticType::JavaScript("script".to_string()),
+                last_update: Utc.ymd(2022, 1, 1).and_hms(1, 0, 0),
+                value: Default::default(),
+            },
+        );
+        assert_eq!(
+            json!({
+                "metadata": {
+                    "name": "thing",
+                    "application": "app",
+                },
+                "syntheticState": {
+                    "foo": {
+                        "javaScript": "script",
+                        "lastUpdate": "2022-01-01T01:00:00Z",
+                        "value": null,
                     }
                 }
             }),

@@ -1,4 +1,4 @@
-use crate::model::{Reconciliation, ReportedFeature, Thing};
+use crate::model::{Reconciliation, ReportedFeature, SyntheticFeature, SyntheticType, Thing};
 use chrono::Utc;
 use serde_json::Value;
 use std::collections::{btree_map::Entry, BTreeMap};
@@ -137,6 +137,27 @@ impl Updater for JsonMergeUpdater {
         let mut json = serde_json::to_value(thing)?;
         json_patch::merge(&mut json, &self.0);
         Ok(serde_json::from_value(json)?)
+    }
+}
+
+pub struct SyntheticStateUpdater(pub String, pub SyntheticType);
+
+impl InfallibleUpdater for SyntheticStateUpdater {
+    fn update(self, mut thing: Thing) -> Thing {
+        match thing.synthetic_state.entry(self.0) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().r#type = self.1;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(SyntheticFeature {
+                    r#type: self.1,
+                    last_update: Utc::now(),
+                    value: Default::default(),
+                });
+            }
+        }
+
+        thing
     }
 }
 

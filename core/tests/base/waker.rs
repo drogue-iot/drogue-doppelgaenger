@@ -24,7 +24,7 @@ async fn test_process() {
                     let mut changed = IndexMap::new();
                     changed.insert(
                         "change".to_string(),
-                        Code::Script(
+                        Code::JavaScript(
                             r#"
 function wakeup(when) {
     waker = when;
@@ -112,7 +112,7 @@ async fn test_timer() {
                         Timer::new(
                             Duration::from_secs(5),
                             Some(Duration::from_secs(3)),
-                            Code::Script(
+                            Code::JavaScript(
                                 r#"
 if (newState.metadata.annotations === undefined) {
     newState.metadata.annotations = {};

@@ -1,0 +1,36 @@
+= Synthetic features
+
+== Constant value
+
+.syn1.js
+[source,javascript]
+----
+include::60_synthetics/syn1.js[]
+----
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/const javaScript=@60_synthetics/syn1.js
+----
+
+== Add two values
+
+.syn2.js
+[source,javascript]
+----
+include::60_synthetics/syn2.js[]
+----
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/add javaScript=@60_synthetics/syn2.js
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates value1:=42 value2:=23
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates value2:=23
+----
+
+== Rename a feature
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/rename1 alias=value1
+----

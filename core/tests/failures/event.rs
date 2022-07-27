@@ -117,7 +117,7 @@ where
                     let mut map = IndexMap::new();
                     map.insert(
                         "test".to_string(),
-                        Changed::from(Code::Script(
+                        Changed::from(Code::JavaScript(
                             r#"
 // send empty strategic merge, every time we reconcile
 
