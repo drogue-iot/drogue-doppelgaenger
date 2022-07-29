@@ -189,14 +189,11 @@ impl Reconciler {
     }
 
     pub async fn run(mut self) -> Result<Outcome, Error> {
-        // clear reconcile waker
-        self.new_thing.clear_wakeup(WakerReason::Reconcile);
+        // cleanup first
+        self.cleanup();
 
-        // clear old logs first, otherwise logging of state will continuously grow
-        // FIXME: remove when we only send a view of the state to the reconcile code
-        for (_, v) in &mut self.new_thing.reconciliation.changed {
-            v.last_log.clear();
-        }
+        // detect reported state changes
+        self.sync_reported_state();
 
         // synthetics
         self.generate_synthetics().await?;
@@ -213,6 +210,29 @@ impl Reconciler {
             new_thing: self.new_thing,
             outbox: self.outbox,
         })
+    }
+
+    fn cleanup(&mut self) {
+        // clear reconcile waker
+        self.new_thing.clear_wakeup(WakerReason::Reconcile);
+
+        // clear old logs first, otherwise logging of state will continuously grow
+        // FIXME: remove when we only send a view of the state to the reconcile code
+        for (_, v) in &mut self.new_thing.reconciliation.changed {
+            v.last_log.clear();
+        }
+    }
+
+    fn sync_reported_state(&mut self) {
+        // we ensure that all reported values which changed from the previous value get an updated
+        // last_update timestamp
+        for (k, next) in &mut self.new_thing.reported_state {
+            if let Some(previous) = self.current_thing.reported_state.get(k) {
+                if previous.value != next.value {
+                    next.last_update = Utc::now();
+                }
+            }
+        }
     }
 
     async fn generate_synthetics(&mut self) -> Result<(), Error> {

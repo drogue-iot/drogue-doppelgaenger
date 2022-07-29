@@ -58,7 +58,8 @@ impl InfallibleUpdater for ReportedStateUpdater {
                             let e = e.get_mut();
                             if e.value != value {
                                 e.value = value;
-                                e.last_update = Utc::now();
+                                // don't need to update the last_updated, as the system will ensure
+                                // that for us later on
                             }
                         }
                         Entry::Vacant(e) => {

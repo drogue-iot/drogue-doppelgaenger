@@ -37,10 +37,20 @@ http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates te
 
 == Patch a thing
 
+With a JSON patch:
+
 [source,shell]
 ----
 http PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/json-patch+json '[0][op]=replace' '[0][path]=/reportedState/temperature/value' '[0][value]=43'
 ----
+
+Or with a strategic merge:
+
+[source,shell]
+----
+http PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/merge-patch+json 'reportedState[temperature][value]:=43'
+----
+
 
 === Remove an annotation
 
