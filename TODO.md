@@ -5,6 +5,7 @@
 * [ ] Make `KafkaSource` generic, align with `Notifier` trait
 * [ ] Think about handling "by application" limitation.
 * [ ] RBAC
-* [ ] Allow a way to modify the thing, overriding a non-empty outbox
+* [x] Allow a way to modify the thing, overriding a non-empty outbox
+  * [ ] Allow more fine-grained control over this
 * [ ] Implement WASM
-* [ ] Ensure that reported state "last updated" changes when only the value changes (move logic to machine)
+* [x] Ensure that reported state "last updated" changes when only the value changes (move logic to machine)
