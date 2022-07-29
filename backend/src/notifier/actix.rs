@@ -1,22 +1,27 @@
 use super::{CLIENT_TIMEOUT, HEARTBEAT_INTERVAL};
-use crate::notifier::{Request, Response};
-use actix::{Actor, ActorContext, AsyncContext, Handler, SpawnHandle, StreamHandler, WrapFuture};
+use crate::notifier::{Request, Response, SetDesiredValue};
+use actix::{
+    Actor, ActorContext, AsyncContext, Handler, ResponseFuture, SpawnHandle, StreamHandler,
+    WrapFuture,
+};
 use actix_web_actors::ws::{self, CloseCode, CloseReason};
 use drogue_doppelgaenger_core::{
     listener::{KafkaSource, Message},
     notifier::Notifier,
-    processor::sink::Sink,
+    processor::{self, sink::Sink, Event},
     service::{Id, Service},
     storage::Storage,
 };
 use futures::StreamExt;
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, collections::HashMap, fmt::Display, sync::Arc, time::Instant};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
 mod message {
     use crate::notifier::Response;
     use actix::Message;
     use actix_web_actors::ws::CloseReason;
+    use drogue_doppelgaenger_core::processor::SetDesiredValue;
+    use std::collections::BTreeMap;
 
     #[derive(Message)]
     #[rtype(result = "()")]
@@ -27,6 +32,9 @@ mod message {
     #[derive(Message)]
     #[rtype(result = "Result<(), serde_json::Error>")]
     pub struct Event(pub Response);
+    #[derive(Message)]
+    #[rtype(result = "()")]
+    pub struct SetDesiredValues(pub String, pub BTreeMap<String, SetDesiredValue>);
     #[derive(Message)]
     #[rtype(result = "()")]
     pub struct Close(pub Option<CloseReason>);
@@ -93,14 +101,40 @@ impl<S: Storage, N: Notifier, Si: Sink> WebSocketHandler<S, N, Si> {
                 }));
                 ctx.stop();
             }
+            Ok(Request::SetDesiredValues { thing, values }) => match Self::convert_set(values) {
+                Ok(values) => {
+                    ctx.address()
+                        .do_send(message::SetDesiredValues(thing, values));
+                }
+                Err(err) => {
+                    Self::close_err(ctx, err);
+                }
+            },
             Err(err) => {
-                ctx.close(Some(CloseReason {
-                    code: CloseCode::Protocol,
-                    description: Some(err.to_string()),
-                }));
-                ctx.stop();
+                Self::close_err(ctx, err);
             }
         }
+    }
+
+    fn convert_set(
+        value: BTreeMap<String, SetDesiredValue>,
+    ) -> anyhow::Result<BTreeMap<String, processor::SetDesiredValue>> {
+        value
+            .into_iter()
+            .map(|(key, value)| {
+                let value: processor::SetDesiredValue = value.try_into()?;
+                Ok((key, value))
+            })
+            .collect::<Result<BTreeMap<String, processor::SetDesiredValue>, _>>()
+    }
+
+    fn close_err<E: Display>(ctx: &mut ws::WebsocketContext<Self>, err: E) {
+        log::info!("Closing websocket due to: {err}");
+        ctx.close(Some(CloseReason {
+            code: CloseCode::Protocol,
+            description: Some(err.to_string()),
+        }));
+        ctx.stop();
     }
 }
 
@@ -138,10 +172,11 @@ impl<S: Storage, N: Notifier, Si: Sink> StreamHandler<Result<ws::Message, ws::Pr
                 self.heartbeat = Instant::now();
             }
             Ok(ws::Message::Binary(data)) => {
-                self.handle_protocol_message(ctx, serde_json::from_slice::<super::Request>(&data));
+                self.handle_protocol_message(ctx, serde_json::from_slice(&data));
             }
             Ok(ws::Message::Text(data)) => {
-                self.handle_protocol_message(ctx, serde_json::from_str::<super::Request>(&data));
+                log::debug!("Message: {data}");
+                self.handle_protocol_message(ctx, serde_json::from_str(&data));
             }
             Ok(ws::Message::Close(reason)) => {
                 log::debug!("Client disconnected - reason: {:?}", reason);
@@ -248,6 +283,24 @@ impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Unsubscribe>
         if let Some(task) = self.listeners.remove(&id) {
             ctx.cancel_future(task);
         }
+    }
+}
+
+impl<S: Storage, N: Notifier, Si: Sink> Handler<message::SetDesiredValues>
+    for WebSocketHandler<S, N, Si>
+{
+    type Result = ResponseFuture<()>;
+
+    fn handle(&mut self, msg: message::SetDesiredValues, _ctx: &mut Self::Context) -> Self::Result {
+        let application = self.application.clone();
+        let sink = self.service.sink().clone();
+
+        Box::pin(async move {
+            let thing = msg.0;
+            let message = processor::Message::SetDesiredValue { values: msg.1 };
+
+            let _ = sink.publish(Event::new(application, thing, message)).await;
+        })
     }
 }
 

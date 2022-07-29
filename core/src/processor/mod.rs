@@ -1,7 +1,7 @@
 pub mod sink;
 pub mod source;
 
-use crate::service::UpdateOptions;
+use crate::service::{DesiredStateValueUpdater, DesiredStateValueUpdaterError, UpdateOptions};
 use crate::{
     model::{Thing, WakerReason},
     notifier::Notifier,
@@ -58,6 +58,18 @@ impl Event {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(untagged)]
+pub enum SetDesiredValue {
+    #[serde(rename_all = "camelCase")]
+    WithOptions {
+        value: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        valid_until: Option<DateTime<Utc>>,
+    },
+    Value(Value),
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Message {
@@ -65,6 +77,10 @@ pub enum Message {
         state: BTreeMap<String, Value>,
         #[serde(default)]
         partial: bool,
+    },
+    SetDesiredValue {
+        #[serde(default)]
+        values: BTreeMap<String, SetDesiredValue>,
     },
     Patch(Patch),
     Merge(Value),
@@ -259,6 +275,8 @@ pub enum MessageError {
     Patch(#[from] PatchError),
     #[error("Failed to apply JSON merge: {0}")]
     Merge(#[from] MergeError),
+    #[error("Failed to apply desired value: {0}")]
+    SetDesiredValues(#[from] DesiredStateValueUpdaterError),
 }
 
 impl Updater for Message {
@@ -279,6 +297,9 @@ impl Updater for Message {
             Message::Wakeup { reasons: _ } => {
                 // don't do any real change, this will just reconcile and process what is necessary
                 Ok(thing)
+            }
+            Message::SetDesiredValue { values } => {
+                Ok(DesiredStateValueUpdater(values).update(thing)?)
             }
         }
     }

@@ -54,8 +54,8 @@
 </header>
 
 <main>
-    <div class="container-fluid pt-3">
-        <div class="row row-cols-1 row-cols-md-1 row-cols-lg-3 g-4">
+    <div class="container pt-3">
+        <div class="row row-cols-1 g-4">
             <div class="col">
                 <div class="card" id="selected-thing">
                     <div class="card-header">
@@ -103,22 +103,8 @@
 
         selectedThing = new ThingCard(new Thing(api, thing), card, {
             showTimestamps: true,
-            labelsToCardStyle: (labels) => {
-                if ("overTemp" in labels) {
-                    return "error";
-                }
-                if ("highTemp" in labels) {
-                    return "warning";
-                }
-            },
-            labelsToPropertyStyle: (labels, name) => {
-                if ("overTemp" in labels && name === "temp") {
-                    return "error";
-                }
-                if ("highTemp" in labels && name === "temp") {
-                    return "warning";
-                }
-            }
+            showDesired: true,
+            controlDesired: true,
         });
     }
 
@@ -138,6 +124,14 @@
             $('#lookup-thing-name').focus().val("");
         }
     });
+
+    const selected = window.location.hash;
+    console.log("Pre-selected: ", selected);
+    if (selected !== undefined && selected !== "") {
+        showThing(selected.substring(1));
+    } else {
+        showThing("foo");
+    }
 
 </script>
 

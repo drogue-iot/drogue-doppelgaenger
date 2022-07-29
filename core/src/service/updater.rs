@@ -2,13 +2,13 @@ use crate::model::{
     DesiredFeature, DesiredFeatureMethod, DesiredFeatureReconciliation, DesiredMode,
     Reconciliation, ReportedFeature, SyntheticFeature, SyntheticType, Thing,
 };
+use crate::processor::SetDesiredValue;
 use chrono::{DateTime, Utc};
+pub use json_patch::Patch;
 use serde_json::Value;
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::convert::Infallible;
 use std::time::Duration;
-
-pub use json_patch::Patch;
 
 pub trait Updater {
     type Error: std::error::Error + 'static;
@@ -250,27 +250,40 @@ impl Updater for DesiredStateUpdater {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DesiredStateValueUpdaterError {
-    #[error("Unknown feature: {0}")]
-    Unknown(String),
+    #[error("Unknown features: {0:?}")]
+    Unknown(Vec<String>),
 }
 
-pub struct DesiredStateValueUpdater {
-    pub name: String,
-    pub value: Value,
-    pub valid_until: Option<DateTime<Utc>>,
-}
+pub struct DesiredStateValueUpdater(pub BTreeMap<String, SetDesiredValue>);
 
 impl Updater for DesiredStateValueUpdater {
     type Error = DesiredStateValueUpdaterError;
 
     fn update(self, mut thing: Thing) -> Result<Thing, Self::Error> {
-        let state = thing
-            .desired_state
-            .get_mut(&self.name)
-            .ok_or_else(|| DesiredStateValueUpdaterError::Unknown(self.name))?;
-        state.value = self.value;
-        state.valid_until = self.valid_until;
-        Ok(thing)
+        let mut missing = vec![];
+
+        for (name, set) in self.0 {
+            if let Some(state) = thing.desired_state.get_mut(&name) {
+                match set {
+                    SetDesiredValue::Value(value) => {
+                        state.value = value;
+                        state.valid_until = None;
+                    }
+                    SetDesiredValue::WithOptions { value, valid_until } => {
+                        state.value = value;
+                        state.valid_until = valid_until;
+                    }
+                }
+            } else {
+                missing.push(name.clone());
+            }
+        }
+
+        if missing.is_empty() {
+            Ok(thing)
+        } else {
+            Err(DesiredStateValueUpdaterError::Unknown(missing))
+        }
     }
 }
 
