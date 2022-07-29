@@ -7,3 +7,4 @@
 * [ ] RBAC
 * [ ] Allow a way to modify the thing, overriding a non-empty outbox
 * [ ] Implement WASM
+* [ ] Ensure that reported state "last updated" changes when only the value changes (move logic to machine)

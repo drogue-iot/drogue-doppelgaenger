@@ -25,7 +25,6 @@ include::60_synthetics/syn2.js[]
 ----
 http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/add javaScript=@60_synthetics/syn2.js
 http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates value1:=42 value2:=23
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates value2:=23
 ----
 
 == Rename a feature

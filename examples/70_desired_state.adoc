@@ -1,0 +1,73 @@
+= Desired state aka Commands
+
+== Create an externally reconciled desired state
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/desiredStates/temperature method:=external
+----
+
+Set the desired value (ensure it is currently not already `23`):
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/desiredStates/temperature value:=23
+----
+
+Now check the state with a `GET`. You should see that the reconciliation state is `reconciling` and it is waiting for
+the report of the state to match the desired value:
+
+[source,json]
+----
+{
+    "desiredState": {
+        "temperature": {
+            "lastUpdate": "2022-07-29T08:14:45.072140510Z",
+            "method": "external",
+            "reconciliation": {
+                "state": "reconciling"
+            },
+            "value": 23
+        }
+    }
+}
+----
+
+Now set the reported state to the desired value:
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates temperature:=23
+----
+
+Perform the `GET` operation again, and you will see that the reconciliation succeeded:
+
+[source,json]
+----
+{
+    "desiredState": {
+        "temperature": {
+            "lastUpdate": "2022-07-29T08:14:45.072140510Z",
+            "method": "external",
+            "reconciliation": {
+                "state": "succeeded",
+                "when": "2022-07-29T08:14:59.579334005Z"
+            },
+            "value": 23
+        }
+    }
+}
+----
+
+By default, the mode is `Sync`, which means that the system expects the state to stay with the desired state. Switching
+to another reported value, will restart the reconciliation process:
+
+[source,shell]
+----
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates temperature:=22
+----
+
+Now `GET`, and check that it did. Set the value back to the desired state afterwards to get it back into the
+"successful" state.
+
+NOTE: It will try to reconcile only for as long as the desired value is valid. Once it expired, it no longer tries.

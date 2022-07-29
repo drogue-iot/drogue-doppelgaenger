@@ -440,9 +440,5 @@ impl Storage {
 }
 
 fn waker_data(thing: &Thing) -> Option<DateTime<Utc>> {
-    thing
-        .internal
-        .as_ref()
-        .and_then(|i| i.waker.as_ref())
-        .map(|w| w.when)
+    thing.internal.as_ref().and_then(|i| i.waker.when)
 }

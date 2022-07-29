@@ -1,5 +1,6 @@
 mod endpoints;
 mod notifier;
+mod utils;
 
 use actix_web::{guard, web, App, HttpServer};
 use anyhow::anyhow;
@@ -85,6 +86,22 @@ pub fn configure<S: Storage, N: Notifier, Si: Sink>(
                     N,
                     Si,
                 >)),
+            );
+            ctx.service(
+                web::resource(
+                    "/api/v1alpha1/things/{application}/things/{thing}/desiredStates/{name}",
+                )
+                .route(web::put().to(endpoints::things_update_desired_state::<
+                    S,
+                    N,
+                    Si,
+                >)),
+            );
+            ctx.service(
+                web::resource(
+                    "/api/v1alpha1/things/{application}/things/{thing}/desiredStates/{name}/value",
+                )
+                .route(web::put().to(endpoints::things_update_desired_state_value::<S, N, Si>)),
             );
             ctx.service(
                 web::resource("/api/v1alpha1/things/{application}/things/{thing}/reconciliations")

@@ -1,8 +1,12 @@
-use crate::model::{Reconciliation, ReportedFeature, SyntheticFeature, SyntheticType, Thing};
-use chrono::Utc;
+use crate::model::{
+    DesiredFeature, DesiredFeatureMethod, DesiredFeatureReconciliation, DesiredMode,
+    Reconciliation, ReportedFeature, SyntheticFeature, SyntheticType, Thing,
+};
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::convert::Infallible;
+use std::time::Duration;
 
 pub use json_patch::Patch;
 
@@ -158,6 +162,114 @@ impl InfallibleUpdater for SyntheticStateUpdater {
         }
 
         thing
+    }
+}
+
+/// A more flexible update struct for [`DesiredFeature`].
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesiredStateUpdate {
+    #[serde(default)]
+    pub value: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "humantime_serde")]
+    pub valid_for: Option<Duration>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<DesiredMode>,
+
+    #[serde(default)]
+    pub reconciliation: Option<DesiredFeatureReconciliation>,
+    #[serde(default)]
+    pub method: Option<DesiredFeatureMethod>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DesiredStateUpdaterError {
+    #[error("Out of range: {0}")]
+    OutOfRange(#[from] time::OutOfRangeError),
+}
+
+pub struct DesiredStateUpdater(pub String, pub DesiredStateUpdate);
+
+impl Updater for DesiredStateUpdater {
+    type Error = DesiredStateUpdaterError;
+
+    fn update(self, mut thing: Thing) -> Result<Thing, DesiredStateUpdaterError> {
+        let DesiredStateUpdate {
+            value,
+            valid_until,
+            valid_for,
+            reconciliation,
+            method,
+            mode,
+        } = self.1;
+
+        let valid_until = valid_until.or(valid_for
+            .map(|d| chrono::Duration::from_std(d))
+            .transpose()?
+            .map(|d| Utc::now() + d));
+
+        match thing.desired_state.entry(self.0) {
+            Entry::Occupied(mut entry) => {
+                // we update what we got
+                let entry = entry.get_mut();
+                if let Some(value) = value {
+                    entry.value = value;
+                }
+                entry.valid_until = valid_until;
+                if let Some(reconciliation) = reconciliation {
+                    entry.reconciliation = reconciliation;
+                }
+                if let Some(method) = method {
+                    entry.method = method;
+                }
+                if let Some(mode) = mode {
+                    entry.mode = mode;
+                }
+            }
+            Entry::Vacant(entry) => {
+                // we create some reasonable defaults
+                entry.insert(DesiredFeature {
+                    value: value.unwrap_or_default(),
+                    last_update: Utc::now(),
+                    valid_until,
+                    reconciliation: reconciliation.unwrap_or_default(),
+                    method: method.unwrap_or_default(),
+                    mode: mode.unwrap_or_default(),
+                });
+            }
+        }
+
+        Ok(thing)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DesiredStateValueUpdaterError {
+    #[error("Unknown feature: {0}")]
+    Unknown(String),
+}
+
+pub struct DesiredStateValueUpdater {
+    pub name: String,
+    pub value: Value,
+    pub valid_until: Option<DateTime<Utc>>,
+}
+
+impl Updater for DesiredStateValueUpdater {
+    type Error = DesiredStateValueUpdaterError;
+
+    fn update(self, mut thing: Thing) -> Result<Thing, Self::Error> {
+        let state = thing
+            .desired_state
+            .get_mut(&self.name)
+            .ok_or_else(|| DesiredStateValueUpdaterError::Unknown(self.name))?;
+        state.value = self.value;
+        state.valid_until = self.valid_until;
+        Ok(thing)
     }
 }
 

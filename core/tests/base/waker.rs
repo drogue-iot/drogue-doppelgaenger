@@ -27,18 +27,18 @@ async fn test_process() {
                         Code::JavaScript(
                             r#"
 function wakeup(when) {
-    waker = when;
+    context.waker = when;
 }
 
-if (newState.reportedState?.["foo"] === undefined) {
-    if (newState.metadata.annotations?.["test"] === "true") {
-        newState.reportedState = {};
-        newState.reportedState["foo"] = {
+if (context.newState.reportedState?.["foo"] === undefined) {
+    if (context.newState.metadata.annotations?.["test"] === "true") {
+        context.newState.reportedState = {};
+        context.newState.reportedState["foo"] = {
             value: "bar",
             lastUpdate: new Date().toISOString(),
         }
     } else {
-        newState.metadata.annotations = {"test": "true"};
+        context.newState.metadata.annotations = {"test": "true"};
         wakeup("5s");
     }
 }
@@ -57,10 +57,10 @@ if (newState.reportedState?.["foo"] === undefined) {
         .await
         .unwrap();
 
-    let wakeup = thing.internal.unwrap().waker.unwrap();
+    let wakeup = thing.internal.unwrap().waker;
     assert_eq!(wakeup.why, BTreeSet::from([WakerReason::Reconcile]));
 
-    assert!(wakeup.when > Utc::now());
+    assert!(wakeup.when.unwrap() > Utc::now());
 
     // it should also have our annotation
 
@@ -78,7 +78,9 @@ if (newState.reportedState?.["foo"] === undefined) {
     let thing = service.get(&id).await.unwrap().unwrap();
 
     // waker expired, so it must be gone
-    assert!(thing.internal.clone().unwrap_or_default().waker.is_none());
+    let internal = thing.internal.clone().unwrap_or_default();
+    assert!(internal.waker.when.is_none());
+    assert!(internal.waker.why.is_empty());
 
     assert_eq!(thing.reported_state.get("foo").unwrap().value, json!("bar"));
 
@@ -114,16 +116,16 @@ async fn test_timer() {
                             Some(Duration::from_secs(3)),
                             Code::JavaScript(
                                 r#"
-if (newState.metadata.annotations === undefined) {
-    newState.metadata.annotations = {};
+if (context.newState.metadata.annotations === undefined) {
+    context.newState.metadata.annotations = {};
 }
-if (newState.reportedState === undefined) {
-    newState.reportedState = {};
+if (context.newState.reportedState === undefined) {
+    context.newState.reportedState = {};
 }
 
 const lastUpdate = new Date().toISOString();
-const value = (newState.reportedState["timer"]?.value || 0) + 1;
-newState.reportedState["timer"] = { value, lastUpdate };
+const value = (context.newState.reportedState["timer"]?.value || 0) + 1;
+context.newState.reportedState["timer"] = { value, lastUpdate };
 "#
                                 .to_string(),
                             ),
@@ -148,9 +150,9 @@ newState.reportedState["timer"] = { value, lastUpdate };
     assert_eq!(thing.reported_state.get("timer").map(|f| &f.value), None);
 
     // check the waker
-    let wakeup = thing.internal.unwrap().waker.unwrap();
+    let wakeup = thing.internal.unwrap().waker;
     assert_eq!(wakeup.why, BTreeSet::from([WakerReason::Reconcile]));
-    assert!(wakeup.when > Utc::now());
+    assert!(wakeup.when.unwrap() > Utc::now());
 
     // wait until the initial delay has expired
     tokio::time::sleep_until(tokio::time::Instant::now() + Duration::from_secs(3 + 1)).await;
@@ -159,7 +161,7 @@ newState.reportedState["timer"] = { value, lastUpdate };
 
     let thing = service.get(&id).await.unwrap().unwrap();
 
-    let wakeup = thing.internal.unwrap().waker.unwrap();
+    let wakeup = thing.internal.unwrap().waker;
     assert_eq!(
         wakeup.why.clone().into_iter().collect::<Vec<_>>(),
         &[WakerReason::Reconcile]
