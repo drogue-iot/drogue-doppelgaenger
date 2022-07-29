@@ -1,8 +1,7 @@
-const value1 = input.newState.reportedState?.["value1"]?.value;
-const value2 = input.newState.reportedState?.["value2"]?.value;
+const degc = context.newState.reportedState?.["temperature"]?.value;
 
-if (value1 !== undefined && value2 !== undefined) {
-    value1 + value2
+if (degc !== undefined) {
+    degc * 9/5 + 32
 } else {
-    null
+    undefined
 }

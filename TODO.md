@@ -9,3 +9,4 @@
   * [ ] Allow more fine-grained control over this
 * [ ] Implement WASM
 * [x] Ensure that reported state "last updated" changes when only the value changes (move logic to machine)
+* [ ] Allow unsetting a desired state, without deleting it

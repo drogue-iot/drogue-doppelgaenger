@@ -88,6 +88,10 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
         }
     }
 
+    pub fn sink(&self) -> &Si {
+        &self.sink
+    }
+
     pub async fn create(&self, thing: Thing) -> Result<Thing, Error<St, No>> {
         let Outcome {
             mut new_thing,

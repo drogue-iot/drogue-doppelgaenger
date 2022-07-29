@@ -812,6 +812,7 @@ dependencies = [
  "drogue-doppelgaenger-core",
  "futures",
  "humantime",
+ "humantime-serde",
  "log",
  "serde",
  "serde_json",

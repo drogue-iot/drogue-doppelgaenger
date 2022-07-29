@@ -607,6 +607,7 @@ mod test {
                     last_attempt: Some(Utc.ymd(2022, 1, 1).and_hms(1, 2, 4)),
                 },
                 method: DesiredFeatureMethod::Manual,
+                mode: DesiredMode::Sync,
             },
         );
         thing.desired_state.insert(
@@ -619,6 +620,7 @@ mod test {
                     when: Utc.ymd(2022, 1, 1).and_hms(1, 2, 4),
                 },
                 method: DesiredFeatureMethod::Manual,
+                mode: DesiredMode::Sync,
             },
         );
         thing.desired_state.insert(
@@ -632,6 +634,7 @@ mod test {
                     reason: Some("The dog ate my command".to_string()),
                 },
                 method: DesiredFeatureMethod::Manual,
+                mode: DesiredMode::Sync,
             },
         );
         thing.desired_state.insert(
@@ -644,6 +647,7 @@ mod test {
                     last_attempt: Some(Utc.ymd(2022, 1, 1).and_hms(1, 2, 4)),
                 },
                 method: DesiredFeatureMethod::Code(Code::JavaScript("true".to_string())),
+                mode: DesiredMode::Sync,
             },
         );
         thing.desired_state.insert(
@@ -659,6 +663,7 @@ mod test {
                     channel: "set-feature".to_string(),
                     payload: DesiredFeatureCommandPayload::Raw,
                 },
+                mode: DesiredMode::Sync,
             },
         );
         thing.desired_state.insert(
@@ -671,6 +676,7 @@ mod test {
                     last_attempt: Some(Utc.ymd(2022, 1, 1).and_hms(1, 2, 4)),
                 },
                 method: DesiredFeatureMethod::External,
+                mode: DesiredMode::Sync,
             },
         );
         assert_eq!(

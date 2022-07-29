@@ -10,7 +10,7 @@ use drogue_doppelgaenger_core::{
     listener::KafkaSource,
     model::{Reconciliation, SyntheticType, Thing},
     notifier::Notifier,
-    processor::sink::Sink,
+    processor::{sink::Sink, SetDesiredValue},
     service::{
         DesiredStateUpdate, DesiredStateUpdater, DesiredStateValueUpdater, Id, JsonMergeUpdater,
         JsonPatchUpdater, Patch, ReportedStateUpdater, Service, SyntheticStateUpdater, UpdateMode,
@@ -164,14 +164,13 @@ pub async fn things_update_desired_state_value<S: Storage, N: Notifier, Si: Sink
 
     let valid_until = valid_until.or_else(|| valid_for.map(|d| Utc::now() + d));
 
+    let mut values = BTreeMap::new();
+    values.insert(name, SetDesiredValue::WithOptions { value, valid_until });
+
     service
         .update(
             &Id::new(application, thing),
-            DesiredStateValueUpdater {
-                name,
-                value,
-                valid_until,
-            },
+            DesiredStateValueUpdater(values),
             &OPTS,
         )
         .await?;
