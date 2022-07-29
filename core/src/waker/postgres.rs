@@ -197,8 +197,8 @@ where
                 let reasons = data
                     .internal
                     .as_ref()
-                    .and_then(|i| i.waker.as_ref())
-                    .map(|w| &w.why)
+                    .filter(|i| i.waker.when.is_some())
+                    .map(|i| &i.waker.why)
                     .map(|r| r.iter().map(|r| *r).collect::<Vec<_>>())
                     .unwrap_or_default();
 
@@ -239,10 +239,10 @@ where
         mut data: Data,
     ) -> anyhow::Result<()> {
         // we clear the waker and commit the transaction. The oplock should hold, as we have locked
-        // the record.
+        // the record "for update".
 
         if let Some(internal) = &mut data.internal {
-            internal.waker = None;
+            internal.waker = Default::default();
         }
 
         let stmt = tx

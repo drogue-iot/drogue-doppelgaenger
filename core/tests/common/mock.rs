@@ -422,8 +422,9 @@ impl MockWaker {
     pub async fn update(&self, thing: &Thing) {
         let mut lock = self.wakers.lock().await;
 
-        match thing.internal.as_ref().and_then(|i| i.waker.as_ref()) {
-            Some(waker) => {
+        let waker = thing.waker();
+        match waker.when {
+            Some(when) => {
                 let id = TargetId {
                     id: Id::new(
                         thing.metadata.application.clone(),
@@ -439,11 +440,7 @@ impl MockWaker {
                 };
                 lock.insert(
                     thing.metadata.name.clone(),
-                    (
-                        waker.when,
-                        waker.why.iter().map(|r| *r).collect::<Vec<_>>(),
-                        id,
-                    ),
+                    (when, waker.why.iter().map(|r| *r).collect::<Vec<_>>(), id),
                 );
             }
             None => {

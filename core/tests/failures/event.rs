@@ -121,13 +121,13 @@ where
                             r#"
 // send empty strategic merge, every time we reconcile
 
-if (newState.reportedState === undefined) {
-    newState.reportedState = {}
+if (context.newState.reportedState === undefined) {
+    context.newState.reportedState = {}
 }
-const value = (newState.reportedState["counter"]?.value || 0) + 1; 
-newState.reportedState["counter"] = { value, lastUpdate: new Date().toISOString() };
+const value = (context.newState.reportedState["counter"]?.value || 0) + 1; 
+context.newState.reportedState["counter"] = { value, lastUpdate: new Date().toISOString() };
 
-outbox.push({thing: "thing2", message: { merge: {"counter": value}}});
+context.outbox.push({thing: "thing2", message: { merge: {"counter": value}}});
 "#
                             .to_string(),
                         )),

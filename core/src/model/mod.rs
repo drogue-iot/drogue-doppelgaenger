@@ -55,6 +55,34 @@ impl Thing {
     pub fn with_id(id: &Id) -> Self {
         Self::new(&id.application, &id.thing)
     }
+
+    /// Get a clone of the current waker state
+    pub fn waker(&self) -> Waker {
+        self.internal
+            .as_ref()
+            .map(|i| i.waker.clone())
+            .unwrap_or_default()
+    }
+
+    /// Set the waker state, creating an internal if necessary
+    pub fn set_waker(&mut self, waker: Waker) {
+        if waker.is_empty() {
+            // only create an internal if the waker is not empty
+            if let Some(internal) = &mut self.internal {
+                internal.waker = waker;
+            }
+        } else {
+            match &mut self.internal {
+                Some(internal) => internal.waker = waker,
+                None => {
+                    self.internal = Some(Internal {
+                        waker,
+                        ..Default::default()
+                    })
+                }
+            }
+        }
+    }
 }
 
 /// The state view on thing model.
@@ -270,8 +298,99 @@ impl ReportedFeature {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct DesiredFeature {
-    pub last_update: DateTime<Utc>,
+    /// The value the system desired the device to apply.
+    #[serde(default)]
     pub value: Value,
+    /// The value the system desired the device to apply.
+    #[serde(default)]
+    pub mode: DesiredMode,
+    /// The timestamp the desired value was last updated.
+    pub last_update: DateTime<Utc>,
+    /// An optional indication until when the desired value is valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<DateTime<Utc>>,
+
+    /// The current reconciliation state of the desired value.
+    #[serde(default)]
+    pub reconciliation: DesiredFeatureReconciliation,
+    /// The method of reconciliation.
+    #[serde(default)]
+    pub method: DesiredFeatureMethod,
+}
+
+/// The mode of the desired feature.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum DesiredMode {
+    /// Only reconcile once, resulting in success of failure.
+    Once,
+    /// Keep desired and reported state in sync. Switches back to from "success" to "reconciling"
+    /// when the report state deviates from the desired, for as long as the desired value is valid.
+    #[default]
+    Sync,
+}
+
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "state")]
+pub enum DesiredFeatureReconciliation {
+    #[serde(rename_all = "camelCase")]
+    Reconciling {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        last_attempt: Option<DateTime<Utc>>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Succeeded { when: DateTime<Utc> },
+    #[serde(rename_all = "camelCase")]
+    Failed {
+        when: DateTime<Utc>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+}
+
+impl Default for DesiredFeatureReconciliation {
+    fn default() -> Self {
+        Self::Reconciling { last_attempt: None }
+    }
+}
+
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum DesiredFeatureMethod {
+    /// Do not process the feature at all.
+    ///
+    /// NOTE: This will not trigger any state changes other than setting the state to
+    /// [`DesiredFeatureState::Reconciling`].
+    Manual,
+    /// An external process needs to trigger the reconciliation. But the system will detect a
+    /// reported state and change the desired state accordingly.
+    #[default]
+    External,
+    /// Try to reconcile the state by sending out commands.
+    Command {
+        channel: String,
+        #[serde(default)]
+        payload: DesiredFeatureCommandPayload,
+    },
+    /// Generate reconcile actions through custom code.
+    Code(Code),
+}
+
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum DesiredFeatureCommandPayload {
+    // Send the desired value as payload.
+    #[default]
+    Raw,
 }
 
 #[derive(
@@ -315,8 +434,8 @@ pub enum Code {
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Internal {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub waker: Option<Waker>,
+    #[serde(default, skip_serializing_if = "Waker::is_empty")]
+    pub waker: Waker,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outbox: Vec<Event>,
 }
@@ -327,7 +446,7 @@ impl Internal {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.waker.is_none() & self.outbox.is_empty()
+        self.waker.is_empty() & self.outbox.is_empty()
     }
 }
 
@@ -364,45 +483,46 @@ impl WakerExt for Thing {
 
 impl WakerExt for Internal {
     fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
-        match &mut self.waker {
-            None => {
-                // no waker, just create it
-                self.waker = Some(Waker {
-                    when,
-                    why: {
-                        let mut set = BTreeSet::new();
-                        set.insert(reason);
-                        set
-                    },
-                })
-            }
-            Some(waker) => {
-                // we already have a waker
-                if waker.when > when {
-                    // wakeup earlier
-                    waker.when = when;
+        self.waker.wakeup_at(when, reason);
+    }
+
+    fn clear_wakeup(&mut self, reason: WakerReason) {
+        self.waker.clear_wakeup(reason);
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Waker {
+    pub when: Option<DateTime<Utc>>,
+    pub why: BTreeSet<WakerReason>,
+}
+
+impl Waker {
+    pub fn is_empty(&self) -> bool {
+        self.when.is_none()
+    }
+}
+
+impl WakerExt for Waker {
+    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
+        self.why.insert(reason);
+        match self.when {
+            None => self.when = Some(when),
+            Some(w) => {
+                if w > when {
+                    self.when = Some(when);
                 }
-                // add our reason (if missing)
-                waker.why.extend(Some(reason));
             }
         }
     }
 
     fn clear_wakeup(&mut self, reason: WakerReason) {
-        if let Some(waker) = &mut self.waker {
-            waker.why.remove(&reason);
-            if waker.why.is_empty() {
-                self.waker = None;
-            }
+        self.why.remove(&reason);
+        if self.why.is_empty() {
+            self.when = None;
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Waker {
-    pub when: DateTime<Utc>,
-    pub why: BTreeSet<WakerReason>,
 }
 
 #[derive(
@@ -468,6 +588,163 @@ mod test {
                         "lastUpdate": "2022-01-01T01:00:00Z",
                         "value": null,
                     }
+                }
+            }),
+            serde_json::to_value(thing).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_ser_desired() {
+        let mut thing = Thing::new("app", "thing");
+        thing.desired_state.insert(
+            "foo".to_string(),
+            DesiredFeature {
+                last_update: Utc.ymd(2022, 1, 1).and_hms(1, 2, 3),
+                valid_until: Some(Utc.ymd(2022, 1, 1).and_hms(2, 2, 3)),
+                value: json!(42),
+                reconciliation: DesiredFeatureReconciliation::Reconciling {
+                    last_attempt: Some(Utc.ymd(2022, 1, 1).and_hms(1, 2, 4)),
+                },
+                method: DesiredFeatureMethod::Manual,
+            },
+        );
+        thing.desired_state.insert(
+            "bar".to_string(),
+            DesiredFeature {
+                last_update: Utc.ymd(2022, 1, 1).and_hms(1, 2, 3),
+                valid_until: None,
+                value: json!(42),
+                reconciliation: DesiredFeatureReconciliation::Succeeded {
+                    when: Utc.ymd(2022, 1, 1).and_hms(1, 2, 4),
+                },
+                method: DesiredFeatureMethod::Manual,
+            },
+        );
+        thing.desired_state.insert(
+            "baz".to_string(),
+            DesiredFeature {
+                last_update: Utc.ymd(2022, 1, 1).and_hms(1, 2, 3),
+                valid_until: None,
+                value: json!(42),
+                reconciliation: DesiredFeatureReconciliation::Failed {
+                    when: Utc.ymd(2022, 1, 1).and_hms(1, 2, 4),
+                    reason: Some("The dog ate my command".to_string()),
+                },
+                method: DesiredFeatureMethod::Manual,
+            },
+        );
+        thing.desired_state.insert(
+            "method_code".to_string(),
+            DesiredFeature {
+                last_update: Utc.ymd(2022, 1, 1).and_hms(1, 2, 3),
+                valid_until: None,
+                value: json!(42),
+                reconciliation: DesiredFeatureReconciliation::Reconciling {
+                    last_attempt: Some(Utc.ymd(2022, 1, 1).and_hms(1, 2, 4)),
+                },
+                method: DesiredFeatureMethod::Code(Code::JavaScript("true".to_string())),
+            },
+        );
+        thing.desired_state.insert(
+            "method_command".to_string(),
+            DesiredFeature {
+                last_update: Utc.ymd(2022, 1, 1).and_hms(1, 2, 3),
+                valid_until: None,
+                value: json!(42),
+                reconciliation: DesiredFeatureReconciliation::Reconciling {
+                    last_attempt: Some(Utc.ymd(2022, 1, 1).and_hms(1, 2, 4)),
+                },
+                method: DesiredFeatureMethod::Command {
+                    channel: "set-feature".to_string(),
+                    payload: DesiredFeatureCommandPayload::Raw,
+                },
+            },
+        );
+        thing.desired_state.insert(
+            "method_external".to_string(),
+            DesiredFeature {
+                last_update: Utc.ymd(2022, 1, 1).and_hms(1, 2, 3),
+                valid_until: None,
+                value: json!(42),
+                reconciliation: DesiredFeatureReconciliation::Reconciling {
+                    last_attempt: Some(Utc.ymd(2022, 1, 1).and_hms(1, 2, 4)),
+                },
+                method: DesiredFeatureMethod::External,
+            },
+        );
+        assert_eq!(
+            json!({
+                "metadata": {
+                    "name": "thing",
+                    "application": "app",
+                },
+                "desiredState": {
+                    "bar": {
+                        "value": 42,
+                        "lastUpdate": "2022-01-01T01:02:03Z",
+                        "reconciliation": {
+                            "state": "succeeded",
+                            "when": "2022-01-01T01:02:04Z",
+                        },
+                        "method": "manual",
+                    },
+                    "baz": {
+                        "value": 42,
+                        "lastUpdate": "2022-01-01T01:02:03Z",
+                        "reconciliation": {
+                            "state": "failed",
+                            "when": "2022-01-01T01:02:04Z",
+                            "reason": "The dog ate my command",
+                        },
+                        "method": "manual",
+                    },
+                    "foo": {
+                        "value": 42,
+                        "lastUpdate": "2022-01-01T01:02:03Z",
+                        "validUntil": "2022-01-01T02:02:03Z",
+                        "reconciliation": {
+                            "state": "reconciling",
+                            "lastAttempt": "2022-01-01T01:02:04Z",
+                        },
+                        "method": "manual",
+                    },
+                    "method_code": {
+                        "value": 42,
+                        "lastUpdate": "2022-01-01T01:02:03Z",
+                        "reconciliation": {
+                            "state": "reconciling",
+                            "lastAttempt": "2022-01-01T01:02:04Z",
+                        },
+                        "method": {
+                            "code": {
+                                "javaScript": "true",
+                            },
+                        },
+                    },
+                    "method_command": {
+                        "value": 42,
+                        "lastUpdate": "2022-01-01T01:02:03Z",
+                        "reconciliation": {
+                            "state": "reconciling",
+                            "lastAttempt": "2022-01-01T01:02:04Z",
+                        },
+                        "method": {
+                            "command": {
+                                "channel": "set-feature",
+                                "payload": "raw",
+                            }
+                        },
+                    },
+                    "method_external": {
+                        "value": 42,
+                        "lastUpdate": "2022-01-01T01:02:03Z",
+                        "reconciliation": {
+                            "state": "reconciling",
+                            "lastAttempt": "2022-01-01T01:02:04Z",
+                        },
+                        "method": "external",
+                    },
                 }
             }),
             serde_json::to_value(thing).unwrap()

@@ -1,14 +1,20 @@
-use crate::{notifier::actix::WebSocketHandler, Instance};
+use crate::{
+    notifier::actix::WebSocketHandler,
+    utils::{to_datetime, to_duration},
+    Instance,
+};
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
+use chrono::Utc;
 use drogue_doppelgaenger_core::{
     listener::KafkaSource,
     model::{Reconciliation, SyntheticType, Thing},
     notifier::Notifier,
     processor::sink::Sink,
     service::{
-        Id, JsonMergeUpdater, JsonPatchUpdater, Patch, ReportedStateUpdater, Service,
-        SyntheticStateUpdater, UpdateMode, UpdateOptions,
+        DesiredStateUpdate, DesiredStateUpdater, DesiredStateValueUpdater, Id, JsonMergeUpdater,
+        JsonPatchUpdater, Patch, ReportedStateUpdater, Service, SyntheticStateUpdater, UpdateMode,
+        UpdateOptions,
     },
     storage::Storage,
 };
@@ -110,6 +116,62 @@ pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink>(
         .update(
             &Id::new(application, thing),
             SyntheticStateUpdater(state, payload),
+            &OPTS,
+        )
+        .await?;
+
+    Ok(HttpResponse::NoContent().json(json!({})))
+}
+
+pub async fn things_update_desired_state<S: Storage, N: Notifier, Si: Sink>(
+    service: web::Data<Service<S, N, Si>>,
+    path: web::Path<(String, String, String)>,
+    payload: web::Json<DesiredStateUpdate>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let (application, thing, state) = path.into_inner();
+    let payload = payload.into_inner();
+
+    service
+        .update(
+            &Id::new(application, thing),
+            DesiredStateUpdater(state, payload),
+            &OPTS,
+        )
+        .await?;
+
+    Ok(HttpResponse::NoContent().json(json!({})))
+}
+
+pub async fn things_update_desired_state_value<S: Storage, N: Notifier, Si: Sink>(
+    request: HttpRequest,
+    service: web::Data<Service<S, N, Si>>,
+    path: web::Path<(String, String, String)>,
+    payload: web::Json<Value>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let (application, thing, name) = path.into_inner();
+    let value = payload.into_inner();
+
+    let valid_until = request
+        .headers()
+        .get("valid-until")
+        .map(to_datetime)
+        .transpose()?;
+    let valid_for = request
+        .headers()
+        .get("valid-for")
+        .map(to_duration)
+        .transpose()?;
+
+    let valid_until = valid_until.or_else(|| valid_for.map(|d| Utc::now() + d));
+
+    service
+        .update(
+            &Id::new(application, thing),
+            DesiredStateValueUpdater {
+                name,
+                value,
+                valid_until,
+            },
             &OPTS,
         )
         .await?;

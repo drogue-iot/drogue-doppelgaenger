@@ -174,7 +174,7 @@ reconciliation:
           updateAggregate("some-device", "some-other-feature", newState["some-feature"])
         }
 
-  periodic:
+  timers:
     command:
       period: 1m
       enabled: false # defaults to true
