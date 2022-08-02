@@ -5,6 +5,7 @@ use actix::{
     WrapFuture,
 };
 use actix_web_actors::ws::{self, CloseCode, CloseReason};
+use drogue_doppelgaenger_core::command::CommandSink;
 use drogue_doppelgaenger_core::{
     listener::{KafkaSource, Message},
     notifier::Notifier,
@@ -40,19 +41,19 @@ mod message {
     pub struct Close(pub Option<CloseReason>);
 }
 
-pub struct WebSocketHandler<S: Storage, N: Notifier, Si: Sink> {
+pub struct WebSocketHandler<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> {
     heartbeat: Instant,
     listeners: HashMap<Id, SpawnHandle>,
-    service: Arc<Service<S, N, Si>>,
+    service: Arc<Service<S, N, Si, Cmd>>,
     source: Arc<KafkaSource>,
     application: String,
     /// Whether or not to just subscribe for a single thing
     thing: Option<String>,
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> WebSocketHandler<S, N, Si> {
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> WebSocketHandler<S, N, Si, Cmd> {
     pub fn new(
-        service: Arc<Service<S, N, Si>>,
+        service: Arc<Service<S, N, Si, Cmd>>,
         source: Arc<KafkaSource>,
         application: String,
         thing: Option<String>,
@@ -95,9 +96,9 @@ impl<S: Storage, N: Notifier, Si: Sink> WebSocketHandler<S, N, Si> {
             Ok(Request::Subscribe { .. } | Request::Unsubscribe { .. }) => {
                 ctx.close(Some(CloseReason {
                     code: CloseCode::Unsupported,
-                    description: Some(format!(
-                        "Unable to subscribe/unsubscribe on single-thing endpoint"
-                    )),
+                    description: Some(
+                        "Unable to subscribe/unsubscribe on single-thing endpoint".to_string(),
+                    ),
                 }));
                 ctx.stop();
             }
@@ -138,7 +139,9 @@ impl<S: Storage, N: Notifier, Si: Sink> WebSocketHandler<S, N, Si> {
     }
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> Actor for WebSocketHandler<S, N, Si> {
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> Actor
+    for WebSocketHandler<S, N, Si, Cmd>
+{
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
@@ -159,8 +162,8 @@ impl<S: Storage, N: Notifier, Si: Sink> Actor for WebSocketHandler<S, N, Si> {
 }
 
 // Handle incoming messages from the Websocket Client
-impl<S: Storage, N: Notifier, Si: Sink> StreamHandler<Result<ws::Message, ws::ProtocolError>>
-    for WebSocketHandler<S, N, Si>
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>
+    StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketHandler<S, N, Si, Cmd>
 {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
@@ -195,7 +198,9 @@ impl<S: Storage, N: Notifier, Si: Sink> StreamHandler<Result<ws::Message, ws::Pr
     }
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Subscribe> for WebSocketHandler<S, N, Si> {
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> Handler<message::Subscribe>
+    for WebSocketHandler<S, N, Si, Cmd>
+{
     type Result = ();
 
     fn handle(&mut self, msg: message::Subscribe, ctx: &mut Self::Context) -> Self::Result {
@@ -270,8 +275,8 @@ impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Subscribe> for WebSocke
     }
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Unsubscribe>
-    for WebSocketHandler<S, N, Si>
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> Handler<message::Unsubscribe>
+    for WebSocketHandler<S, N, Si, Cmd>
 {
     type Result = ();
 
@@ -286,8 +291,8 @@ impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Unsubscribe>
     }
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> Handler<message::SetDesiredValues>
-    for WebSocketHandler<S, N, Si>
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> Handler<message::SetDesiredValues>
+    for WebSocketHandler<S, N, Si, Cmd>
 {
     type Result = ResponseFuture<()>;
 
@@ -304,15 +309,20 @@ impl<S: Storage, N: Notifier, Si: Sink> Handler<message::SetDesiredValues>
     }
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Event> for WebSocketHandler<S, N, Si> {
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> Handler<message::Event>
+    for WebSocketHandler<S, N, Si, Cmd>
+{
     type Result = Result<(), serde_json::Error>;
 
     fn handle(&mut self, msg: message::Event, ctx: &mut Self::Context) -> Self::Result {
-        Ok(ctx.text(serde_json::to_string(&msg.0)?))
+        ctx.text(serde_json::to_string(&msg.0)?);
+        Ok(())
     }
 }
 
-impl<S: Storage, N: Notifier, Si: Sink> Handler<message::Close> for WebSocketHandler<S, N, Si> {
+impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> Handler<message::Close>
+    for WebSocketHandler<S, N, Si, Cmd>
+{
     type Result = ();
 
     fn handle(&mut self, msg: message::Close, ctx: &mut Self::Context) -> Self::Result {

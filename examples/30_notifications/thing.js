@@ -223,7 +223,7 @@ class ThingCard {
             }
             for (const [key, value] of Object.entries(this.state?.desiredState || {})) {
                 if (states[key] === undefined) {
-                    states[key] = {desired};
+                    states[key] = {desired: value};
                 } else {
                     states[key].desired = value;
                 }
@@ -357,13 +357,21 @@ class ThingCard {
                             renderedState = `<span class="badge text-bg-secondary">unknown (${value.desired.reconciliation.state})</span>`;
                             break;
                     }
+
                     const lastUpdate = makeDate(value?.desired.lastUpdate);
-                    const validUntil = makeDate(value?.desired.validUntil);
+
+                    let validUntil = value?.desired.validUntil;
+                    if (validUntil === undefined) {
+                        validUntil = "∞";
+                    } else {
+                        validUntil = timestampString(validUntil);
+                    }
+
                     row.append($(`
 <div class="col text-end">${renderedDesiredValue} ${renderType(value.desired.value)}</div>
 <div class="col text-muted text-end">${timestampString(lastUpdate)}</div>
 <div class="col text-end"> <span>${renderedState}</span> <span class="text-muted">${when}</span></div>
-<div class="col text-muted text-end">${timestampString(validUntil)}</div>
+<div class="col text-muted text-end">${validUntil}</div>
 `))
                 } else {
                     row.append($(`<div class="col"></div><div class="col"></div><div class="col"></div><div class="col"></div>`))

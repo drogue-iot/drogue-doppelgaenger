@@ -6,11 +6,12 @@ pub use error::*;
 pub use id::Id;
 pub use updater::*;
 
+use crate::app::Spawner;
+use crate::command::CommandSink;
 use crate::machine::{Machine, OutboxMessage, Outcome};
 use crate::model::{Thing, WakerExt, WakerReason};
 use crate::notifier::Notifier;
-use crate::processor::sink::Sink;
-use crate::processor::Event;
+use crate::processor::{sink::Sink, Event};
 use crate::storage::{self, Storage};
 use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
@@ -20,16 +21,19 @@ use uuid::Uuid;
 lazy_static! {
     static ref OUTBOX_EVENTS: IntCounter =
         register_int_counter!("outbox", "Number of generated outbox events").unwrap();
+    static ref COMMANDS: IntCounter =
+        register_int_counter!("commands", "Number of generated commands").unwrap();
     static ref NOT_CHANGED: IntCounter =
         register_int_counter!("not_changed", "Number of events that didn't cause a change")
             .unwrap();
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct Config<St: Storage, No: Notifier, Si: Sink> {
+pub struct Config<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> {
     pub storage: St::Config,
     pub notifier: No::Config,
     pub sink: Si::Config,
+    pub command_sink: Cmd::Config,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -37,22 +41,24 @@ pub struct UpdateOptions {
     pub ignore_unclean_inbox: bool,
 }
 
-impl<St: Storage, No: Notifier, Si: Sink> Clone for Config<St, No, Si> {
+impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Clone for Config<St, No, Si, Cmd> {
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
             notifier: self.notifier.clone(),
             sink: self.sink.clone(),
+            command_sink: self.command_sink.clone(),
         }
     }
 }
 
 pub const POSTPONE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 
-pub struct Service<St: Storage, No: Notifier, Si: Sink> {
+pub struct Service<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> {
     storage: St,
     notifier: No,
     sink: Si,
+    command_sink: Cmd,
     postpone: Duration,
 }
 
@@ -66,24 +72,30 @@ pub enum OutboxState {
     Retry,
 }
 
-impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
-    pub fn from_config(config: Config<St, No, Si>) -> anyhow::Result<Self> {
+impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, Cmd> {
+    pub fn from_config(
+        spawner: &mut dyn Spawner,
+        config: Config<St, No, Si, Cmd>,
+    ) -> anyhow::Result<Self> {
         let Config {
             storage,
             notifier,
             sink,
+            command_sink,
         } = config;
         let storage = St::from_config(&storage)?;
         let notifier = No::from_config(&notifier)?;
         let sink = Si::from_config(sink)?;
-        Ok(Self::new(storage, notifier, sink))
+        let command_sink = Cmd::from_config(spawner, command_sink)?;
+        Ok(Self::new(storage, notifier, sink, command_sink))
     }
 
-    pub fn new(storage: St, notifier: No, sink: Si) -> Self {
+    pub fn new(storage: St, notifier: No, sink: Si, command_sink: Cmd) -> Self {
         Self {
             storage,
             notifier,
             sink,
+            command_sink,
             postpone: Duration::seconds(POSTPONE_DURATION.as_secs() as i64),
         }
     }
@@ -92,10 +104,11 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
         &self.sink
     }
 
-    pub async fn create(&self, thing: Thing) -> Result<Thing, Error<St, No>> {
+    pub async fn create(&self, thing: Thing) -> Result<Thing, Error<St, No, Cmd>> {
         let Outcome {
             mut new_thing,
             outbox,
+            commands,
         } = Machine::create(thing).await?;
 
         OUTBOX_EVENTS.inc_by(outbox.len() as u64);
@@ -110,6 +123,13 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
         // we can send the events right away, as we created the entry
 
         let new_thing = self.send_and_ack(new_thing).await?;
+
+        // send commands
+
+        self.command_sink
+            .send_commands(commands)
+            .await
+            .map_err(Error::Command)?;
 
         // notify
 
@@ -127,14 +147,14 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
         Ok(new_thing)
     }
 
-    pub async fn get(&self, id: &Id) -> Result<Option<Thing>, Error<St, No>> {
+    pub async fn get(&self, id: &Id) -> Result<Option<Thing>, Error<St, No, Cmd>> {
         self.storage
             .get(&id.application, &id.thing)
             .await
             .map_err(Error::Storage)
     }
 
-    pub async fn delete(&self, id: &Id) -> Result<bool, Error<St, No>> {
+    pub async fn delete(&self, id: &Id) -> Result<bool, Error<St, No, Cmd>> {
         self.storage
             .delete(&id.application, &id.thing)
             .await
@@ -150,7 +170,7 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
         id: &Id,
         updater: U,
         opts: &UpdateOptions,
-    ) -> Result<Thing, Error<St, No>>
+    ) -> Result<Thing, Error<St, No, Cmd>>
     where
         U: Updater,
     {
@@ -169,11 +189,13 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
         let Outcome {
             mut new_thing,
             outbox,
+            commands,
         } = Machine::new(current_thing.clone())
             .update(|thing| async { updater.update(thing) })
             .await?;
 
         OUTBOX_EVENTS.inc_by(outbox.len() as u64);
+        COMMANDS.inc_by(commands.len() as u64);
         Self::add_outbox(&mut new_thing, outbox);
 
         // check diff after adding outbox events
@@ -198,10 +220,17 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
 
         log::debug!("Current outbox size: {}", current_outbox);
 
-        if current_outbox <= 0 {
+        if current_outbox == 0 {
             // only send when we had no previous events, otherwise we already queued
             new_thing = self.send_and_ack(new_thing).await?;
         }
+
+        // send commands
+
+        self.command_sink
+            .send_commands(commands)
+            .await
+            .map_err(Error::Command)?;
 
         // notify
 
@@ -255,10 +284,10 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
 
         // append events to the stored outbox
 
-        internal.outbox.extend(add.clone());
+        internal.outbox.extend(add);
     }
 
-    async fn send_and_ack(&self, mut new_thing: Thing) -> Result<Thing, Error<St, No>> {
+    async fn send_and_ack(&self, mut new_thing: Thing) -> Result<Thing, Error<St, No, Cmd>> {
         let outbox = if let Some(outbox) = new_thing.internal.as_ref().map(|i| &i.outbox) {
             outbox
         } else {
@@ -273,10 +302,7 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
             return Ok(new_thing);
         }
 
-        let outbox = outbox
-            .into_iter()
-            .map(|event| event.clone())
-            .collect::<Vec<_>>();
+        let outbox = outbox.iter().cloned().collect::<Vec<_>>();
 
         match self.sink.publish_iter(outbox).await {
             Ok(()) => {
@@ -331,7 +357,7 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
         &self,
         mut current_thing: Thing,
         ignore_unclean_inbox: bool,
-    ) -> Result<Thing, Error<St, No>> {
+    ) -> Result<Thing, Error<St, No, Cmd>> {
         // we keep looping, until either we:
         // 1) Have a clean inbox
         // 2) Find out we can't process any more events
@@ -362,7 +388,7 @@ impl<St: Storage, No: Notifier, Si: Sink> Service<St, No, Si> {
     async fn prepare_outbox(
         &self,
         mut thing: Thing,
-    ) -> Result<(Thing, OutboxState), Error<St, No>> {
+    ) -> Result<(Thing, OutboxState), Error<St, No, Cmd>> {
         let internal = match &mut thing.internal {
             None => return Ok((thing, OutboxState::Clean)),
             Some(internal) if internal.outbox.is_empty() => return Ok((thing, OutboxState::Clean)),

@@ -57,7 +57,7 @@ impl TryFrom<SetDesiredValue> for processor::SetDesiredValue {
                 }
             }
             SetDesiredValue::WithOptions {
-                value,
+                value: _,
                 valid_until: Some(_),
                 valid_for: Some(_),
             } => return Err(SetDesiredValueError::Invalid),

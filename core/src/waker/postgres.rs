@@ -199,7 +199,7 @@ where
                     .as_ref()
                     .filter(|i| i.waker.when.is_some())
                     .map(|i| &i.waker.why)
-                    .map(|r| r.iter().map(|r| *r).collect::<Vec<_>>())
+                    .map(|r| r.iter().copied().collect::<Vec<_>>())
                     .unwrap_or_default();
 
                 // send wakeup

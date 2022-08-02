@@ -1,5 +1,6 @@
 //! This needs restructuring
 
+use crate::app::Spawner;
 use crate::config::kafka::KafkaProperties;
 use crate::{model::Thing, notifier::kafka, service::Id};
 use anyhow::Context;
@@ -70,7 +71,7 @@ fn find_id<'m>(msg: &'m BorrowedMessage) -> Option<&'m str> {
 }
 
 impl KafkaSource {
-    pub fn new(config: kafka::Config) -> anyhow::Result<(Self, KafkaSourceRunner)> {
+    pub fn new(spawner: &mut dyn Spawner, config: kafka::Config) -> anyhow::Result<Self> {
         log::info!("Starting Kafka event source: {config:?}");
 
         let topic = config.topic;
@@ -93,7 +94,9 @@ impl KafkaSource {
             inner: inner.clone(),
         };
 
-        Ok((Self { inner }, runner))
+        spawner.spawn(Box::pin(async move { runner.run().await }));
+
+        Ok(Self { inner })
     }
 
     pub fn subscribe(&self, id: Id) -> Source {
@@ -141,9 +144,8 @@ impl KafkaSourceRunner {
                     if let Some(id) = id {
                         let lock = self.inner.read().unwrap();
                         if let Some(listener) = lock.listeners.get(id) {
-                            if let Some(Ok(thing)) = msg
-                                .payload()
-                                .map(|payload| serde_json::from_slice::<Thing>(payload))
+                            if let Some(Ok(thing)) =
+                                msg.payload().map(serde_json::from_slice::<Thing>)
                             {
                                 if let Err(err) = listener.1.send(Message::Change(Arc::new(thing)))
                                 {

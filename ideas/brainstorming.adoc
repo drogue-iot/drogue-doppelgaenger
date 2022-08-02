@@ -133,9 +133,12 @@ desiredState:
     state: reconciling # success
     method:
       script: |
-
+        if (Date.now() - lastAttempt) > 30000 {
+          lastAttempt = Date.now();
+          waker("30s");
+          sendCommand("channel", {"some": "payload"});
+        }
       command:
-        channel: set-feature2
         payload:
           raw: {}
           jsonInject:
@@ -185,6 +188,20 @@ reconciliation:
         } else {
           disableTimer("command");
         }
+
+  lifecycle:
+    hierarchy:
+      create:
+        script: |
+          registerHierarchy();
+          setAnnotation("channel", "telemetry");
+      modify:
+        script: |
+          unregisterHierarchy();
+          registerHierarchy();
+      delete:
+        script: |
+          unregisterHierarchy();
 
 pendingEvents:
   - {}

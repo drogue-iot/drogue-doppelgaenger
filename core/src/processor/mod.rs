@@ -1,14 +1,16 @@
 pub mod sink;
 pub mod source;
 
-use crate::service::{DesiredStateValueUpdater, DesiredStateValueUpdaterError, UpdateOptions};
 use crate::{
+    app::Spawner,
+    command::CommandSink,
     model::{Thing, WakerReason},
     notifier::Notifier,
     processor::{sink::Sink, source::Source},
     service::{
-        self, Id, JsonMergeUpdater, JsonPatchUpdater, MergeError, PatchError, ReportedStateUpdater,
-        Service, UpdateMode, Updater,
+        self, DesiredStateValueUpdater, DesiredStateValueUpdaterError, Id, JsonMergeUpdater,
+        JsonPatchUpdater, MergeError, PatchError, ReportedStateUpdater, Service, UpdateMode,
+        UpdateOptions, Updater,
     },
     storage::{self, Storage},
 };
@@ -153,38 +155,43 @@ impl Updater for ReportStateBuilder {
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub struct Config<St: Storage, No: Notifier, Si: Sink, So: Source> {
+pub struct Config<St: Storage, No: Notifier, Si: Sink, So: Source, Cmd: CommandSink> {
     #[serde(bound = "")]
-    pub service: service::Config<St, No, Si>,
+    pub service: service::Config<St, No, Si, Cmd>,
     pub source: So::Config,
 }
 
-pub struct Processor<St, No, Si, So>
+pub struct Processor<St, No, Si, So, Cmd>
 where
     St: Storage,
     No: Notifier,
     Si: Sink,
     So: Source,
+    Cmd: CommandSink,
 {
-    service: Service<St, No, Si>,
+    service: Service<St, No, Si, Cmd>,
     source: So,
 }
 
-impl<St, No, Si, So> Processor<St, No, Si, So>
+impl<St, No, Si, So, Cmd> Processor<St, No, Si, So, Cmd>
 where
     St: Storage,
     No: Notifier,
     Si: Sink,
     So: Source,
+    Cmd: CommandSink,
 {
-    pub fn from_config(config: Config<St, No, Si, So>) -> anyhow::Result<Self> {
-        let service = Service::from_config(config.service)?;
+    pub fn from_config(
+        spawner: &mut dyn Spawner,
+        config: Config<St, No, Si, So, Cmd>,
+    ) -> anyhow::Result<Self> {
+        let service = Service::from_config(spawner, config.service)?;
         let source = So::from_config(config.source)?;
 
         Ok(Self::new(service, source))
     }
 
-    pub fn new(service: Service<St, No, Si>, source: So) -> Self {
+    pub fn new(service: Service<St, No, Si, Cmd>, source: So) -> Self {
         Self { service, source }
     }
 

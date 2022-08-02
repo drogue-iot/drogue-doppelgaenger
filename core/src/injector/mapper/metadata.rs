@@ -60,7 +60,7 @@ impl MetadataMapper {
             .to_string();
 
         let id = event.id().to_string();
-        let timestamp = event.time().map(|d| *d).unwrap_or_else(|| Utc::now());
+        let timestamp = event.time().copied().unwrap_or_else(Utc::now);
 
         Ok(Some(Meta {
             id,
