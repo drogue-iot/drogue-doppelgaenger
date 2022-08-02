@@ -18,12 +18,10 @@ pub trait Sink: Sized + Send + Sync + Clone + 'static {
         I: IntoIterator<Item = Event> + Send + Sync,
         <I as IntoIterator>::IntoIter: Send + Sync,
     {
-        let mut n = 0;
-        for event in i.into_iter() {
+        for (n, event) in i.into_iter().enumerate() {
             if let Err(err) = self.publish(event).await {
-                return Err((n, err.into()));
+                return Err((n, err));
             }
-            n += 1;
         }
 
         Ok(())

@@ -1,14 +1,14 @@
-mod injector;
-
 #[macro_use]
 extern crate diesel_migrations;
 
 use actix_web::{middleware::Logger, App, HttpServer};
 use anyhow::anyhow;
+use drogue_doppelgaenger_core::command::mqtt;
 use drogue_doppelgaenger_core::{
     app::run_main,
+    command,
     config::{kafka::KafkaProperties, ConfigFromEnv},
-    notifier,
+    injector, notifier,
     processor::{
         sink::{self, Sink},
         source::{self, Source},
@@ -43,6 +43,9 @@ pub struct Server {
     event_sink: sink::kafka::Config,
     // source for events
     event_source: source::kafka::Config,
+
+    // sink for commands
+    command_sink: command::mqtt::Config,
 
     /// optional injector
     #[serde(default)]
@@ -120,6 +123,8 @@ async fn main() -> anyhow::Result<()> {
     .await
     .unwrap();
 
+    let mut tasks = vec![];
+
     let service = service::Config {
         storage: postgres::Config {
             application: server.application.clone(),
@@ -127,18 +132,20 @@ async fn main() -> anyhow::Result<()> {
         },
         notifier: server.notifier_sink,
         sink: server.event_sink.clone(),
+        command_sink: server.command_sink,
     };
     let backend = drogue_doppelgaenger_backend::Config::<
         postgres::Storage,
         notifier::kafka::Notifier,
         sink::kafka::Sink,
+        mqtt::CommandSink,
     > {
         application: server.application.clone(),
         service: service.clone(),
         listener: server.notifier_source,
     };
 
-    let (configurator, runner) = drogue_doppelgaenger_backend::configure(backend)?;
+    let configurator = drogue_doppelgaenger_backend::configure(&mut tasks, backend)?;
 
     // prepare the http server
 
@@ -154,8 +161,6 @@ async fn main() -> anyhow::Result<()> {
 
     // prepare the incoming events processor
 
-    let mut tasks = vec![runner];
-
     let sink = sink::kafka::Sink::from_config(server.event_sink.clone())?;
     let source = source::kafka::Source::from_config(server.event_source)?;
 
@@ -164,7 +169,7 @@ async fn main() -> anyhow::Result<()> {
         tasks.push(injector.run(sink).boxed_local());
     }
 
-    let service = Service::from_config(service)?;
+    let service = Service::from_config(&mut tasks, service)?;
 
     let processor = Processor::new(service, source).run().boxed_local();
 

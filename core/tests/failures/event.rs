@@ -1,4 +1,4 @@
-use crate::common::mock::{Builder, RunningContext};
+use crate::common::mock::{Builder, MockCommandSink, RunningContext};
 use anyhow::anyhow;
 use indexmap::IndexMap;
 use serde_json::json;
@@ -14,7 +14,7 @@ pub struct TestRunner<'t> {
     source: &'t Id,
     target: &'t Id,
     opts: &'t UpdateOptions,
-    service: &'t Service<MockStorage, MockNotifier, MockSink>,
+    service: &'t Service<MockStorage, MockNotifier, MockSink, MockCommandSink>,
     notifier: &'t mut MockNotifier,
     sink: &'t mut MockSink,
 }
@@ -24,9 +24,9 @@ impl<'t> TestRunner<'t> {
         let actual = self
             .service
             .update(
-                &self.source,
+                self.source,
                 ReportStateBuilder::partial().state("foo", "bar"),
-                &self.opts,
+                self.opts,
             )
             .await;
 
@@ -35,7 +35,7 @@ impl<'t> TestRunner<'t> {
 
     async fn assert_step(
         &mut self,
-        actual: Result<Thing, Error<MockStorage, MockNotifier>>,
+        actual: Result<Thing, Error<MockStorage, MockNotifier, MockCommandSink>>,
         expected: Result<(usize, Vec<usize>), String>,
     ) {
         match (actual, expected) {
@@ -48,7 +48,7 @@ impl<'t> TestRunner<'t> {
                 assert_events(
                     events,
                     MockEvent::iter(
-                        &self.target,
+                        self.target,
                         expected
                             .1
                             .into_iter()

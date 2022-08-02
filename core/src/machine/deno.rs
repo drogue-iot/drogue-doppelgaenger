@@ -48,6 +48,17 @@ where
     }
 }
 
+impl<T> Injectable for Json<T>
+where
+    T: Serialize + Send,
+{
+    type Error = serde_v8::Error;
+
+    fn inject(self, runtime: &mut JsRuntime, name: &str) -> Result<(), Self::Error> {
+        self.0.inject(runtime, name)
+    }
+}
+
 impl Extractable for () {
     type Error = Infallible;
 
@@ -64,10 +75,10 @@ where
 
     fn extract(runtime: &mut JsRuntime, name: &str) -> Result<Option<T>, Self::Error> {
         let global = runtime.global_context();
-        let mut scope = &mut runtime.handle_scope();
+        let scope = &mut runtime.handle_scope();
         let global = global.open(scope).global(scope);
 
-        let key = serde_v8::to_v8(&mut scope, name)?;
+        let key = serde_v8::to_v8(scope, name)?;
         Ok(match global.get(scope, key) {
             Some(value) => Some(serde_v8::from_v8(scope, value)?),
             None => None,
@@ -165,7 +176,7 @@ impl Execution {
             }
         }
 
-        Ok(Handle::current()
+        Handle::current()
             .spawn_blocking(move || {
                 let mut runtime = self.create_runtime();
 
@@ -198,7 +209,7 @@ impl Execution {
                     return_value,
                 })
             })
-            .await??)
+            .await?
     }
 }
 
@@ -216,7 +227,7 @@ pub mod duration {
     where
         D: de::Deserializer<'de>,
     {
-        Ok(d.deserialize_option(OptionDurationVisitor)?)
+        d.deserialize_option(OptionDurationVisitor)
     }
 
     struct DurationVisitor;
@@ -255,8 +266,8 @@ pub mod duration {
         where
             E: de::Error,
         {
-            let duration = humantime::parse_duration(&v).map_err(de::Error::custom)?;
-            Ok(Duration::from_std(duration).map_err(de::Error::custom)?)
+            let duration = humantime::parse_duration(v).map_err(de::Error::custom)?;
+            Duration::from_std(duration).map_err(de::Error::custom)
         }
     }
 

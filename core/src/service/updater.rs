@@ -209,7 +209,7 @@ impl Updater for DesiredStateUpdater {
         } = self.1;
 
         let valid_until = valid_until.or(valid_for
-            .map(|d| chrono::Duration::from_std(d))
+            .map(chrono::Duration::from_std)
             .transpose()?
             .map(|d| Utc::now() + d));
 

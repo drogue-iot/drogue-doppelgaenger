@@ -1,41 +1,19 @@
-use crate::injector::{
-    metadata::{Meta, MetadataMapper},
-    payload::PayloadMapper,
+use crate::{
+    injector::{
+        metadata::{Meta, MetadataMapper},
+        payload::PayloadMapper,
+    },
+    mqtt::MqttClient,
+    processor::{sink::Sink, Event},
 };
-use anyhow::{bail, Context};
-use drogue_doppelgaenger_core::processor::{sink::Sink, Event};
-use rumqttc::{
-    AsyncClient, EventLoop, Incoming, MqttOptions, QoS, SubscribeReasonCode, TlsConfiguration,
-    Transport,
-};
-use rustls::{client::NoClientSessionStorage, ClientConfig};
-use std::sync::Arc;
-use uuid::Uuid;
+use rumqttc::{AsyncClient, EventLoop, Incoming, QoS, SubscribeReasonCode};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
-    pub host: String,
-    pub port: u16,
+    #[serde(flatten)]
+    pub client: MqttClient,
+
     pub topic: String,
-
-    #[serde(default)]
-    pub client_id: Option<String>,
-
-    #[serde(default)]
-    pub username: Option<String>,
-    #[serde(default)]
-    pub password: Option<String>,
-
-    #[serde(default = "default::clean_session")]
-    pub clean_session: bool,
-    #[serde(default)]
-    pub disable_tls: bool,
-}
-
-mod default {
-    pub const fn clean_session() -> bool {
-        true
-    }
 }
 
 impl Config {
@@ -77,31 +55,9 @@ impl<S: Sink> Injector<S> {
         metadata_mapper: MetadataMapper,
         payload_mapper: PayloadMapper,
     ) -> anyhow::Result<Self> {
-        let mut opts = MqttOptions::new(
-            config
-                .client_id
-                .unwrap_or_else(|| Uuid::new_v4().to_string()),
-            config.host,
-            config.port,
-        );
-
         let topic = config.topic;
 
-        match (config.username, config.password) {
-            (Some(username), Some(password)) => {
-                opts.set_credentials(username, password);
-            }
-            (None, None) => {}
-            (Some(_), None) => bail!("Unsupported MQTT configuration: username but no password"),
-            (None, Some(_)) => bail!("Unsupported MQTT configuration: password but no username"),
-        }
-
-        opts.set_manual_acks(true)
-            .set_clean_session(config.clean_session);
-
-        if !config.disable_tls {
-            opts.set_transport(Transport::Tls(setup_tls()?));
-        }
+        let opts = config.client.try_into()?;
 
         let (client, events) = AsyncClient::new(opts, 10);
 
@@ -210,21 +166,4 @@ impl<S: Sink> Injector<S> {
             message,
         }))
     }
-}
-
-/// Setup TLS with RusTLS and system certificates.
-fn setup_tls() -> anyhow::Result<TlsConfiguration> {
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().context("could not load platform certs")? {
-        roots.add(&rustls::Certificate(cert.0))?;
-    }
-
-    let mut client_config = ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-
-    client_config.session_storage = Arc::new(NoClientSessionStorage {});
-
-    Ok(TlsConfiguration::Rustls(Arc::new(client_config)))
 }

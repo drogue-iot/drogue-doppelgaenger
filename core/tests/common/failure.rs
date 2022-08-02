@@ -1,12 +1,14 @@
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
+type InnerFailure<R, E> = Arc<Mutex<Option<Box<dyn FailureProvider<R, E>>>>>;
+
 pub struct Failure<R, E>
 where
     R: 'static,
     E: 'static,
 {
-    inner: Arc<Mutex<Option<Box<dyn FailureProvider<R, E>>>>>,
+    inner: InnerFailure<R, E>,
 }
 
 impl<R, E> Clone for Failure<R, E>

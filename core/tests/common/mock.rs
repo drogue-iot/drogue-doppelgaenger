@@ -5,6 +5,8 @@ use anyhow::{anyhow, bail};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use drogue_doppelgaenger_core::{
+    app::Spawner,
+    command::{Command, CommandSink},
     model::{Thing, WakerReason},
     notifier::Notifier,
     processor::{sink::Sink, source::Source, Event, Processor},
@@ -20,8 +22,10 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Handle;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::{oneshot, Mutex, RwLock};
+use tokio::sync::{
+    mpsc::{channel, Receiver, Sender},
+    oneshot, Mutex, RwLock,
+};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
@@ -291,13 +295,42 @@ impl Sink for MockSink {
     }
 }
 
+#[derive(Clone)]
+pub struct MockCommandSink {
+    commands: Arc<RwLock<Vec<Command>>>,
+}
+
+impl MockCommandSink {
+    pub fn new() -> Self {
+        Self {
+            commands: Default::default(),
+        }
+    }
+}
+
+#[async_trait]
+impl CommandSink for MockCommandSink {
+    type Error = Infallible;
+    type Config = ();
+
+    fn from_config(spawner: &mut dyn Spawner, config: Self::Config) -> anyhow::Result<Self> {
+        panic!("Not implemented")
+    }
+
+    async fn send_command(&self, command: Command) -> Result<(), Self::Error> {
+        self.commands.write().await.push(command);
+        Ok(())
+    }
+}
+
 pub struct Context {
     pub sink: MockSink,
     pub source: MockSourceFeeder,
     pub notifier: MockNotifier,
-    pub service: Service<MockStorage, MockNotifier, MockSink>,
-    pub processor: Processor<MockStorage, MockNotifier, MockSink, MockSource>,
+    pub service: Service<MockStorage, MockNotifier, MockSink, MockCommandSink>,
+    pub processor: Processor<MockStorage, MockNotifier, MockSink, MockSource, MockCommandSink>,
     pub waker: waker::Processor<MockWaker, MockSink>,
+    pub command_sink: MockCommandSink,
 }
 
 impl Context {
@@ -333,6 +366,7 @@ impl Context {
                 waker_runner: Handle::current().spawn(async move { waker.run().await }),
                 feed_runner,
             },
+            command_sink: self.command_sink,
         }
     }
 }
@@ -376,8 +410,9 @@ impl Deref for ContextRunner {
 pub struct RunningContext {
     pub sink: MockSink,
     pub notifier: MockNotifier,
-    pub service: Service<MockStorage, MockNotifier, MockSink>,
+    pub service: Service<MockStorage, MockNotifier, MockSink, MockCommandSink>,
     pub runner: ContextRunner,
+    pub command_sink: MockCommandSink,
 }
 
 #[derive(Clone)]
@@ -440,7 +475,7 @@ impl MockWaker {
                 };
                 lock.insert(
                     thing.metadata.name.clone(),
-                    (when, waker.why.iter().map(|r| *r).collect::<Vec<_>>(), id),
+                    (when, waker.why.iter().copied().collect::<Vec<_>>(), id),
                 );
             }
             None => {
@@ -521,21 +556,33 @@ impl Builder {
     pub fn setup(self) -> Context {
         let _ = env_logger::builder().is_test(true).try_init();
 
-        let sink = MockSink::new(self.sink_failure.clone());
+        let sink = MockSink::new(self.sink_failure);
         let source = MockSource::new();
         let notifier = MockNotifier::new();
 
         let waker = MockWaker::new();
         let storage = MockStorage::new("default", waker.clone());
 
+        let command_sink = MockCommandSink::new();
+
         let processor = Processor::new(
-            Service::new(storage.clone(), notifier.clone(), sink.clone()),
+            Service::new(
+                storage.clone(),
+                notifier.clone(),
+                sink.clone(),
+                command_sink.clone(),
+            ),
             source.clone(),
         );
 
         let waker = waker::Processor::new(waker, sink.clone());
 
-        let service = Service::new(storage.clone(), notifier.clone(), sink.clone());
+        let service = Service::new(
+            storage,
+            notifier.clone(),
+            sink.clone(),
+            command_sink.clone(),
+        );
 
         let source = MockSourceFeeder { source };
 
@@ -546,6 +593,7 @@ impl Builder {
             notifier,
             source,
             waker,
+            command_sink,
         }
     }
 }

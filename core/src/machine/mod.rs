@@ -1,6 +1,9 @@
 mod deno;
+mod desired;
 
+use crate::command::Command;
 use crate::machine::deno::{DenoOptions, Json};
+use crate::machine::desired::{CommandBuilder, Context, DesiredReconciler, FeatureContext};
 use crate::model::{
     Changed, Code, DesiredFeatureMethod, DesiredFeatureReconciliation, DesiredMode, JsonSchema,
     Metadata, Reconciliation, Schema, SyntheticType, Thing, ThingState, Timer, WakerExt,
@@ -42,6 +45,7 @@ pub struct Machine {
 pub struct Outcome {
     pub new_thing: Thing,
     pub outbox: Vec<OutboxMessage>,
+    pub commands: Vec<Command>,
 }
 
 impl Machine {
@@ -101,8 +105,11 @@ impl Machine {
 
         // reconcile the result
 
-        let Outcome { new_thing, outbox } =
-            Reconciler::new(original_thing, new_thing).run().await?;
+        let Outcome {
+            new_thing,
+            outbox,
+            commands,
+        } = Reconciler::new(original_thing, new_thing).run().await?;
 
         log::debug!("New state (post-reconcile: {new_thing:?}");
 
@@ -128,7 +135,11 @@ impl Machine {
 
         // done
 
-        Ok(Outcome { new_thing, outbox })
+        Ok(Outcome {
+            new_thing,
+            outbox,
+            commands,
+        })
     }
 
     fn validate(new_thing: &Thing) -> Result<(), Error> {
@@ -174,6 +185,7 @@ pub struct Reconciler {
     current_thing: Arc<Thing>,
     new_thing: Thing,
     outbox: Vec<OutboxMessage>,
+    commands: Vec<Command>,
 }
 
 impl Reconciler {
@@ -185,6 +197,7 @@ impl Reconciler {
             new_thing,
             deadline,
             outbox: Default::default(),
+            commands: Default::default(),
         }
     }
 
@@ -209,6 +222,7 @@ impl Reconciler {
         Ok(Outcome {
             new_thing: self.new_thing,
             outbox: self.outbox,
+            commands: self.commands,
         })
     }
 
@@ -238,11 +252,11 @@ impl Reconciler {
     async fn generate_synthetics(&mut self) -> Result<(), Error> {
         let now = Utc::now();
 
-        let new_state = self.new_thing.clone();
+        let new_state = Arc::new(self.new_thing.clone());
 
         for (name, mut syn) in &mut self.new_thing.synthetic_state {
             let value =
-                Self::run_synthetic(&name, &syn.r#type, new_state.clone(), self.deadline).await?;
+                Self::run_synthetic(name, &syn.r#type, new_state.clone(), self.deadline).await?;
             if syn.value != value {
                 syn.value = value;
                 syn.last_update = now;
@@ -252,84 +266,130 @@ impl Reconciler {
         Ok(())
     }
 
+    /// sync the state with the reported and expected state
     fn sync_desired_state(&mut self) -> Result<(), Error> {
         let mut waker = self.new_thing.waker();
 
         for (name, mut desired) in &mut self.new_thing.desired_state {
-            if !matches!(desired.method, DesiredFeatureMethod::Manual) {
-                // find the current value
-                let reported_value = self
-                    .new_thing
-                    .synthetic_state
-                    .get(name)
-                    .map(|state| &state.value)
-                    .or_else(|| {
-                        self.new_thing
-                            .reported_state
-                            .get(name)
-                            .map(|state| &state.value)
-                    })
-                    .unwrap_or(&Value::Null);
-                let desired_value = &desired.value;
+            // update the last change timestamp
 
-                // check if there is a change from the previous state
-                if let Some(previous) = self.current_thing.desired_state.get(name) {
-                    if previous.value != desired.value
-                        || previous.valid_until != desired.valid_until
-                    {
-                        // desired value changed, start reconciling again
+            // find the current value
+            let reported_value = self
+                .new_thing
+                .synthetic_state
+                .get(name)
+                .map(|state| &state.value)
+                .or_else(|| {
+                    self.new_thing
+                        .reported_state
+                        .get(name)
+                        .map(|state| &state.value)
+                })
+                .unwrap_or(&Value::Null);
+            let desired_value = &desired.value;
+
+            // check if there is a change from the previous state
+            if let Some(previous) = self.current_thing.desired_state.get(name) {
+                if previous.value != desired.value || previous.valid_until != desired.valid_until {
+                    // desired value changed, start reconciling again
+                    desired.reconciliation =
+                        DesiredFeatureReconciliation::Reconciling { last_attempt: None };
+                    desired.last_update = Utc::now();
+                }
+            }
+
+            if matches!(desired.method, DesiredFeatureMethod::Manual) {
+                continue;
+            }
+
+            match (&desired.reconciliation, &desired.mode) {
+                // Mode is disabled, and we already are ...
+                (DesiredFeatureReconciliation::Disabled { .. }, DesiredMode::Disabled) => {
+                    // ... do nothing
+                }
+
+                // Mode is disabled, but we are not...
+                (_, DesiredMode::Disabled) => {
+                    // ... mark disabled
+                    desired.reconciliation =
+                        DesiredFeatureReconciliation::Disabled { when: Utc::now() };
+                }
+
+                // Mode is not disabled, but we are are
+                (DesiredFeatureReconciliation::Disabled { .. }, _) => {
+                    if reported_value != desired_value {
+                        // not the same
+                        if desired.valid_until.map(|u| u > Utc::now()).unwrap_or(true) {
+                            // the value is still valid, back to reconciling
+                            desired.reconciliation =
+                                DesiredFeatureReconciliation::Reconciling { last_attempt: None };
+                        } else {
+                            // the value is no longer valid
+                            desired.reconciliation = DesiredFeatureReconciliation::Failed {
+                                when: Utc::now(),
+                                reason: Some(
+                                    "Activated reconciliation with expired value".to_string(),
+                                ),
+                            };
+                        }
+                    } else {
+                        // equals => means success
                         desired.reconciliation =
-                            DesiredFeatureReconciliation::Reconciling { last_attempt: None };
-                        desired.last_update = Utc::now();
+                            DesiredFeatureReconciliation::Succeeded { when: Utc::now() }
                     }
                 }
 
-                match &desired.reconciliation {
-                    DesiredFeatureReconciliation::Succeeded { .. }
-                        if matches!(desired.mode, DesiredMode::Sync) =>
+                // Mode is "keep sync", and we succeeded
+                (DesiredFeatureReconciliation::Succeeded { .. }, DesiredMode::Sync) => {
+                    // if we should keep it in sync, check values and if the value is still valid
+                    if reported_value != desired_value
+                        && desired.valid_until.map(|u| u > Utc::now()).unwrap_or(true)
                     {
-                        // if we should keep it in sync, check values and if the value is still valid
-                        if reported_value != desired_value
-                            && desired.valid_until.map(|u| u > Utc::now()).unwrap_or(true)
-                        {
-                            // back to reconciling
-                            desired.reconciliation =
-                                DesiredFeatureReconciliation::Reconciling { last_attempt: None };
+                        // if not, back to reconciling
+                        desired.reconciliation =
+                            DesiredFeatureReconciliation::Reconciling { last_attempt: None };
 
-                            if let Some(valid_until) = desired.valid_until {
-                                // and set waker
-                                waker.wakeup_at(valid_until, WakerReason::Reconcile);
-                            }
+                        if let Some(valid_until) = desired.valid_until {
+                            // and set waker
+                            waker.wakeup_at(valid_until, WakerReason::Reconcile);
                         }
                     }
-                    DesiredFeatureReconciliation::Succeeded { .. }
-                    | DesiredFeatureReconciliation::Failed { .. } => {
-                        // we do nothing
-                    }
-                    DesiredFeatureReconciliation::Reconciling { .. } => {
-                        if reported_value == desired_value {
-                            // value changed to expected value -> success
-                            desired.reconciliation =
-                                DesiredFeatureReconciliation::Succeeded { when: Utc::now() };
-                        } else if let Some(valid_until) = desired.valid_until {
-                            // value did not change to expected value, and expired -> failure
-                            if valid_until < Utc::now() {
-                                desired.reconciliation = DesiredFeatureReconciliation::Failed {
-                                    when: Utc::now(),
-                                    reason: None,
-                                };
-                            } else {
-                                // otherwise, start waker
-                                waker.wakeup_at(valid_until, WakerReason::Reconcile);
-                            }
+                }
+
+                // succeeded and not (sync), or failed
+                (DesiredFeatureReconciliation::Succeeded { .. }, _)
+                | (DesiredFeatureReconciliation::Failed { .. }, _) => {
+                    // we do nothing
+                }
+
+                // we are reconciling
+                (DesiredFeatureReconciliation::Reconciling { .. }, _) => {
+                    if reported_value == desired_value {
+                        // value changed to expected value -> success
+                        desired.reconciliation =
+                            DesiredFeatureReconciliation::Succeeded { when: Utc::now() };
+                    } else if let Some(valid_until) = desired.valid_until {
+                        // value did not change to expected value, and expired -> failure
+                        if valid_until < Utc::now() {
+                            desired.reconciliation = DesiredFeatureReconciliation::Failed {
+                                when: Utc::now(),
+                                reason: None,
+                            };
+                        } else {
+                            // otherwise, start waker
+                            waker.wakeup_at(valid_until, WakerReason::Reconcile);
                         }
-                        // else -> keep going
                     }
+                    // else -> keep going
                 }
             }
         }
 
+        // set possible waker
+
         self.new_thing.set_waker(waker);
+
+        // done
 
         Ok(())
     }
@@ -338,10 +398,26 @@ impl Reconciler {
         // sync first
         self.sync_desired_state()?;
 
+        // get the current waker
+        let mut waker = self.new_thing.waker();
+        let new_thing = Arc::new(self.new_thing.clone());
+
+        let mut commands = CommandBuilder::default();
+
+        let mut context = Context {
+            new_thing,
+            deadline: self.deadline,
+            waker: &mut waker,
+            commands: &mut commands,
+        };
+
         // process next
-        for (name, mut desired) in &mut self.new_thing.desired_state {
-            match &desired.reconciliation {
-                DesiredFeatureReconciliation::Succeeded { .. }
+        for (name, desired) in &mut self.new_thing.desired_state {
+            let value = desired.value.clone();
+
+            match &mut desired.reconciliation {
+                DesiredFeatureReconciliation::Disabled { .. }
+                | DesiredFeatureReconciliation::Succeeded { .. }
                 | DesiredFeatureReconciliation::Failed { .. } => {
                     // we do nothing
                 }
@@ -350,16 +426,45 @@ impl Reconciler {
                         DesiredFeatureMethod::Manual | DesiredFeatureMethod::External => {
                             // we do nothing
                         }
-                        DesiredFeatureMethod::Command { channel, payload } => {
-                            todo!("Implement");
-                        }
-                        DesiredFeatureMethod::Code(code) => {
-                            todo!("Implement");
-                        }
+
+                        DesiredFeatureMethod::Command(command) => command
+                            .reconcile(
+                                &mut context,
+                                FeatureContext {
+                                    name,
+                                    last_attempt,
+                                    value,
+                                },
+                            )
+                            .await
+                            .map_err(|err| Error::Reconcile(anyhow!(err)))?,
+
+                        DesiredFeatureMethod::Code(code) => code
+                            .reconcile(
+                                &mut context,
+                                FeatureContext {
+                                    name,
+                                    last_attempt,
+                                    value,
+                                },
+                            )
+                            .await
+                            .map_err(Error::Reconcile)?,
                     }
                 }
             }
         }
+
+        self.commands.extend(
+            commands
+                .into_commands(&self.new_thing.metadata.application)
+                .map_err(|err| Error::Reconcile(anyhow!(err)))?,
+        );
+
+        // set waker, possibly changed
+        self.new_thing.set_waker(waker);
+
+        // done
         Ok(())
     }
 
@@ -413,7 +518,7 @@ impl Reconciler {
                             Some(
                                 last_started
                                     + Duration::from_std(initial_delay)
-                                        .unwrap_or(Duration::max_value()),
+                                        .unwrap_or_else(|_| Duration::max_value()),
                             )
                         }
                     }
@@ -503,8 +608,7 @@ impl Reconciler {
                     logs,
                 } = out.output.0;
 
-                let mut new_state =
-                    new_state.unwrap_or_else(|| self.current_thing.as_ref().clone());
+                let mut new_state = new_state.unwrap_or_else(|| self.new_thing.clone());
 
                 // schedule the waker, in the new state
                 if let Some(duration) = waker {
@@ -524,7 +628,7 @@ impl Reconciler {
     async fn run_synthetic(
         name: &str,
         r#type: &SyntheticType,
-        new_state: Thing,
+        new_state: Arc<Thing>,
         deadline: tokio::time::Instant,
     ) -> Result<Value, Error> {
         match r#type {
@@ -532,7 +636,7 @@ impl Reconciler {
                 #[derive(serde::Serialize)]
                 #[serde(rename_all = "camelCase")]
                 struct Input {
-                    new_state: Thing,
+                    new_state: Arc<Thing>,
                 }
 
                 let opts = DenoOptions { deadline };
@@ -596,7 +700,11 @@ mod test {
 
     #[tokio::test]
     async fn test_create() {
-        let Outcome { new_thing, outbox } = Machine::create(test_thing()).await.unwrap();
+        let Outcome {
+            new_thing,
+            outbox,
+            commands,
+        } = Machine::create(test_thing()).await.unwrap();
 
         // When creating, the machine will start with an empty thing, which doesn't have any
         // resource information. The machine will also ensure that this internal metadata is not
@@ -623,13 +731,18 @@ mod test {
         );
 
         assert_eq!(outbox, vec![]);
+        assert_eq!(commands, vec![]);
     }
 
     #[tokio::test]
     async fn test_update_simple_1() {
         let last_update = Utc::now();
         let machine = Machine::new(test_thing());
-        let Outcome { new_thing, outbox } = machine
+        let Outcome {
+            new_thing,
+            outbox,
+            commands,
+        } = machine
             .update(|mut thing| async {
                 thing.reported_state.insert(
                     "temperature".to_string(),
@@ -667,12 +780,13 @@ mod test {
         );
 
         assert_eq!(outbox, vec![]);
+        assert_eq!(commands, vec![]);
     }
 
     const UID: &str = "3952a802-01e8-11ed-a9c0-d45d6455d2cc";
 
     fn creation_timestamp() -> DateTime<Utc> {
-        Utc.ymd(2022, 01, 01).and_hms(12, 42, 00)
+        Utc.ymd(2022, 1, 1).and_hms(12, 42, 0)
     }
 
     fn test_metadata() -> Metadata {

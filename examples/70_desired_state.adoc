@@ -4,7 +4,7 @@
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/desiredStates/temperature method:=external
+http PUT localhost:8080/api/v1alpha1/things/default/things/foo/desiredStates/temperature method=external
 ----
 
 Set the desired value (ensure it is currently not already `23`):

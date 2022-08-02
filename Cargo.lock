@@ -892,6 +892,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "uuid 1.1.2",
 ]
 
@@ -930,14 +931,12 @@ dependencies = [
  "log",
  "postgres-native-tls",
  "rdkafka",
- "rumqttc",
  "rustls",
  "rustls-native-certs",
  "serde",
  "serde_json",
  "tokio",
  "tokio-postgres",
- "url",
  "uuid 1.1.2",
 ]
 

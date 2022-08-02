@@ -1,6 +1,6 @@
+use crate::processor::Message;
 use anyhow::{anyhow, bail};
 use cloudevents::Data;
-use drogue_doppelgaenger_core::processor::Message;
 use serde::Deserialize;
 use serde_json::Value;
 use url::Url;
@@ -81,7 +81,7 @@ impl PayloadMapper {
         log::warn!(
             "Unknown payload for mapper: {:?} - contentType: {}, schema: {}, data: {data:?}",
             self,
-            content_type.as_deref().unwrap_or("<none>"),
+            content_type.unwrap_or("<none>"),
             schema.as_ref().map(|s| s.as_str()).unwrap_or("<none>")
         );
         Err(anyhow!("Unknown payload"))

@@ -2,6 +2,8 @@
 
 use futures::future::LocalBoxFuture;
 use futures::stream::FuturesUnordered;
+use std::future::Future;
+use std::pin::Pin;
 
 #[cfg(feature = "jaeger")]
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -97,6 +99,16 @@ pub fn init_tracing(_: &str) {
 fn init_no_tracing() {
     env_logger::builder().format_timestamp_millis().init();
     log::info!("Tracing is not enabled");
+}
+
+pub trait Spawner {
+    fn spawn(&mut self, future: Pin<Box<dyn Future<Output = anyhow::Result<()>>>>);
+}
+
+impl Spawner for Vec<LocalBoxFuture<'_, anyhow::Result<()>>> {
+    fn spawn(&mut self, future: Pin<Box<dyn Future<Output = anyhow::Result<()>>>>) {
+        self.push(future);
+    }
 }
 
 /// Run a standard main loop.

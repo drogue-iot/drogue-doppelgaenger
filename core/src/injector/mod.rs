@@ -1,13 +1,12 @@
 //! Injectors allow to inject events from an external system into the internal Kafka topic
 
-use drogue_doppelgaenger_core::processor::sink::Sink;
-
 mod mapper;
 mod mqtt;
 
-use crate::injector::metadata::MetadataMapper;
-use crate::injector::payload::PayloadMapper;
 pub use mapper::*;
+
+use crate::injector::{metadata::MetadataMapper, payload::PayloadMapper};
+use crate::processor::sink::Sink;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -7,6 +7,7 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use chrono::Utc;
 use drogue_doppelgaenger_core::{
+    command::CommandSink,
     listener::KafkaSource,
     model::{Reconciliation, SyntheticType, Thing},
     notifier::Notifier,
@@ -25,8 +26,8 @@ const OPTS: UpdateOptions = UpdateOptions {
     ignore_unclean_inbox: true,
 };
 
-pub async fn things_get<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_get<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let result = service.get(&path.into_inner()).await?;
@@ -34,8 +35,8 @@ pub async fn things_get<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::Ok().json(result))
 }
 
-pub async fn things_create<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_create<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     payload: web::Json<Thing>,
 ) -> Result<HttpResponse, actix_web::Error> {
     service.create(payload.into_inner()).await?;
@@ -43,8 +44,8 @@ pub async fn things_create<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_update<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_update<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     payload: web::Json<Thing>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let application = payload.metadata.application.clone();
@@ -58,8 +59,8 @@ pub async fn things_update<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_patch<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_patch<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<Patch>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -72,8 +73,8 @@ pub async fn things_patch<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_merge<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_merge<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<Value>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -86,8 +87,8 @@ pub async fn things_merge<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<BTreeMap<String, Value>>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -104,8 +105,8 @@ pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<(String, String, String)>,
     payload: web::Json<SyntheticType>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -123,8 +124,8 @@ pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_update_desired_state<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_update_desired_state<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<(String, String, String)>,
     payload: web::Json<DesiredStateUpdate>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -142,9 +143,14 @@ pub async fn things_update_desired_state<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_update_desired_state_value<S: Storage, N: Notifier, Si: Sink>(
+pub async fn things_update_desired_state_value<
+    S: Storage,
+    N: Notifier,
+    Si: Sink,
+    Cmd: CommandSink,
+>(
     request: HttpRequest,
-    service: web::Data<Service<S, N, Si>>,
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<(String, String, String)>,
     payload: web::Json<Value>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -178,8 +184,8 @@ pub async fn things_update_desired_state_value<S: Storage, N: Notifier, Si: Sink
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<Reconciliation>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -190,8 +196,8 @@ pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_delete<S: Storage, N: Notifier, Si: Sink>(
-    service: web::Data<Service<S, N, Si>>,
+pub async fn things_delete<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
     service.delete(&path.into_inner()).await?;
@@ -199,12 +205,12 @@ pub async fn things_delete<S: Storage, N: Notifier, Si: Sink>(
     Ok(HttpResponse::NoContent().json(json!({})))
 }
 
-pub async fn things_notifications<S: Storage, N: Notifier, Si: Sink>(
+pub async fn things_notifications<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     req: HttpRequest,
     path: web::Path<String>,
     stream: web::Payload,
     source: web::Data<KafkaSource>,
-    service: web::Data<Service<S, N, Si>>,
+    service: web::Data<Service<S, N, Si, Cmd>>,
     instance: web::Data<Instance>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let application = path.into_inner();
@@ -219,12 +225,12 @@ pub async fn things_notifications<S: Storage, N: Notifier, Si: Sink>(
     ws::start(handler, &req, stream)
 }
 
-pub async fn things_notifications_single<S: Storage, N: Notifier, Si: Sink>(
+pub async fn things_notifications_single<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     req: HttpRequest,
     path: web::Path<(String, String)>,
     stream: web::Payload,
     source: web::Data<KafkaSource>,
-    service: web::Data<Service<S, N, Si>>,
+    service: web::Data<Service<S, N, Si, Cmd>>,
     instance: web::Data<Instance>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let (application, thing) = path.into_inner();
