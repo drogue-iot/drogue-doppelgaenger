@@ -1,4 +1,4 @@
-use deno_core::{serde_v8, v8, Extension, JsRuntime, RuntimeOptions};
+use deno_core::{include_js_files, serde_v8, v8, Extension, JsRuntime, RuntimeOptions};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio::{runtime::Handle, task::JoinHandle, time::Instant};
@@ -144,12 +144,16 @@ impl Execution {
             })
             .build();
 
+        let api = Extension::builder()
+            .js(include_js_files!(prefix "drogue:extensions/api", "js/core.js",))
+            .build();
+
         // FIXME: doesn't work as advertised, we keep it anyway
         let create_params = v8::Isolate::create_params().heap_limits(0, 3 * 1024 * 1024);
 
         let mut runtime = JsRuntime::new(RuntimeOptions {
             create_params: Some(create_params),
-            extensions: vec![disable],
+            extensions: vec![disable, api],
             ..Default::default()
         });
 
@@ -199,6 +203,7 @@ impl Execution {
                 Handle::current().block_on(async { runtime.run_event_loop(false).await })?;
                 // FIXME: eval late result
 
+                // stop the deadline watcher
                 drop(deadline);
 
                 //let output = extract_context(&mut runtime)?;

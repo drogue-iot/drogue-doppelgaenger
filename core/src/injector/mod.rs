@@ -5,8 +5,10 @@ mod mqtt;
 
 pub use mapper::*;
 
-use crate::injector::{metadata::MetadataMapper, payload::PayloadMapper};
-use crate::processor::sink::Sink;
+use crate::{
+    injector::{metadata::MetadataMapper, payload::PayloadMapper},
+    processor::sink::Sink,
+};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]

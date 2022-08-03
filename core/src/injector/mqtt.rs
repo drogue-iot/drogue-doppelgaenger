@@ -6,7 +6,21 @@ use crate::{
     mqtt::MqttClient,
     processor::{sink::Sink, Event},
 };
+use chrono::Utc;
+use lazy_static::lazy_static;
+use prometheus::{register_histogram, register_int_counter_vec, Histogram, IntCounterVec};
 use rumqttc::{AsyncClient, EventLoop, Incoming, QoS, SubscribeReasonCode};
+
+lazy_static! {
+    static ref EVENTS: IntCounterVec = register_int_counter_vec!(
+        "injector_events",
+        "Number of events processed by injector",
+        &["result"]
+    )
+    .unwrap();
+    static ref LAG: Histogram =
+        register_histogram!("injector_lag", "Lag in ms for the injector").unwrap();
+}
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
@@ -112,11 +126,16 @@ impl<S: Sink> Injector<S> {
                             if let Err(err) = self.sink.publish(event).await {
                                 log::error!("Failed to inject event: {err}, Exiting loop");
                             }
+                            EVENTS.with_label_values(&["ok"]).inc();
                         }
                         Ok(None) => {
                             // got skipped
+                            EVENTS.with_label_values(&["skipped"]).inc();
                         }
-                        Err(err) => log::info!("Unable to parse event: {err}, skipping..."),
+                        Err(err) => {
+                            EVENTS.with_label_values(&["failed"]).inc();
+                            log::info!("Unable to parse event: {err}, skipping...")
+                        }
                     }
                     if perform_ack {
                         if let Err(err) = self.client.try_ack(&publish) {
@@ -144,25 +163,32 @@ impl<S: Sink> Injector<S> {
 
         log::debug!("Cloud Event: {event:?}");
 
-        let Meta {
-            id,
-            timestamp,
-            application,
-            device,
-        } = match self.metadata_mapper.map(&event)? {
+        let meta = match self.metadata_mapper.map(&event)? {
             Some(meta) => meta,
             None => {
                 return Ok(None);
             }
         };
 
-        let message = self.payload_mapper.map(event.take_data())?;
+        LAG.observe((Utc::now() - meta.timestamp).num_milliseconds() as f64);
+
+        let message = self.payload_mapper.map(&meta, event.take_data())?;
+
+        let Meta {
+            id,
+            timestamp,
+            application,
+            device,
+            channel,
+        } = meta;
+
+        let thing = format!("{device}/{channel}");
 
         Ok(Some(Event {
             id,
             timestamp,
             application,
-            device,
+            thing,
             message,
         }))
     }

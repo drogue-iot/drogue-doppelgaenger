@@ -152,6 +152,10 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         self.storage
             .get(&id.application, &id.thing)
             .await
+            .or_else(|err| match err {
+                storage::Error::NotFound => Ok(None),
+                _ => Err(err),
+            })
             .map_err(Error::Storage)
     }
 
@@ -367,7 +371,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
                 id: Uuid::new_v4().to_string(),
                 timestamp: Utc::now(),
                 application: thing.metadata.application.clone(),
-                device: message.thing,
+                thing: message.thing,
                 message: message.message,
             })
             .collect();

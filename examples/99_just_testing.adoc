@@ -1,5 +1,7 @@
 = Just my test stuff
 
+== Conditions
+
 [source,shell]
 ----
 http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "overTempGroup" }'
@@ -35,4 +37,32 @@ Deleting:
 http DELETE localhost:8080/api/v1alpha1/things/default/things/overTempGroup
 http DELETE localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8
 http DELETE localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42
+----
+
+== Hierarchy
+
+[source,shell]
+----
+http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "A4:C1:38:0A:88:A8/status" }' 'reconciliation[changed][hierarchy][javaScript]=@80_hierarchy/code.js' 'reconciliation[deleting][hierarchy][javaScript]=@80_hierarchy/code.js'
+http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "A4:C1:38:A2:6D:42/status" }' 'reconciliation[changed][hierarchy][javaScript]=@80_hierarchy/code.js' 'reconciliation[deleting][hierarchy][javaScript]=@80_hierarchy/code.js'
+http POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "holsetbakken-dungeon/foo" }' 'reconciliation[changed][hierarchy][javaScript]=@80_hierarchy/code.js' 'reconciliation[deleting][hierarchy][javaScript]=@80_hierarchy/code.js'
+
+http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8/annotations 'io.drogue/group=de/by/muc'
+http PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42/annotations 'io.drogue/group=de/by/muc'
+http PUT localhost:8080/api/v1alpha1/things/default/things/holsetbakken-dungeon/annotations 'io.drogue/group=no'
+
+http GET localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8%2Fstatus
+http GET localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42%2Fstatus
+
+http GET localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8
+http GET localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42
+
+http GET localhost:8080/api/v1alpha1/things/default/things/%2Fde%2Fby%2Fmuc
+http GET localhost:8080/api/v1alpha1/things/default/things/%2Fde%2Fby
+http GET localhost:8080/api/v1alpha1/things/default/things/%2Fde
+http GET localhost:8080/api/v1alpha1/things/default/things/%2F
+
+http DELETE localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8%2Fstatus
+http DELETE localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42%2Fstatus
+http DELETE localhost:8080/api/v1alpha1/things/default/things/holsetbakken-dungeon%2Ffoo
 ----

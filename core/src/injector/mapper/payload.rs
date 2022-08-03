@@ -1,8 +1,10 @@
+use crate::injector::metadata::Meta;
 use crate::processor::Message;
 use anyhow::{anyhow, bail};
 use cloudevents::Data;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use url::Url;
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -10,7 +12,7 @@ use url::Url;
 #[serde(tag = "type")]
 pub enum PayloadMapper {
     #[serde(alias = "raw")]
-    /// Expects the payload to the the Drogue Doppelgaenger schema
+    /// Expects the payload to be the Drogue Doppelgaenger schema
     Raw,
     #[serde(alias = "simpleJson")]
     /// Expects a JSON object as payload, taking the root level properties as reported state properties.
@@ -18,6 +20,9 @@ pub enum PayloadMapper {
         /// If the data is a partial update.
         #[serde(default)]
         partial: bool,
+        /// Add a timestamp value from the source event.
+        #[serde(default)]
+        add_timestamp: bool,
     },
 }
 
@@ -30,11 +35,15 @@ impl Default for PayloadMapper {
 impl PayloadMapper {
     pub fn map(
         &self,
+        meta: &Meta,
         data: (Option<String>, Option<Url>, Option<Data>),
     ) -> anyhow::Result<Message> {
         match self {
             Self::Raw => self.map_raw(data),
-            Self::SimpleJson { partial } => self.map_simple(data, *partial),
+            Self::SimpleJson {
+                partial,
+                add_timestamp,
+            } => self.map_simple(&meta, data, *partial, *add_timestamp),
         }
     }
 
@@ -52,17 +61,22 @@ impl PayloadMapper {
 
     fn map_simple(
         &self,
+        meta: &Meta,
         (content_type, schema, data): (Option<String>, Option<Url>, Option<Data>),
         partial: bool,
+        add_timestamp: bool,
     ) -> anyhow::Result<Message> {
         match (content_type.as_deref(), schema, data) {
             (Some("application/json" | "text/json"), _, Some(data)) => match from_data(data)? {
                 Value::Object(props) => {
-                    let message = Message::ReportState {
-                        state: props.into_iter().collect(),
-                        partial,
-                    };
-                    Ok(message)
+                    let mut state: BTreeMap<String, Value> = props.into_iter().collect();
+                    if add_timestamp {
+                        state.insert(
+                            "lastMessage".to_string(),
+                            meta.timestamp.to_rfc3339().into(),
+                        );
+                    }
+                    Ok(Message::ReportState { state, partial })
                 }
                 _ => {
                     bail!("Wrong root level value for {self:?} mapper, expected: Object");

@@ -7,6 +7,7 @@
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-gH2yIJqKdNHPEq0n4Mqa/HGKIhSkIHeL5AyhkYV8i59U5AR6csBvApHHNl/vI1Bx" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css">
 
     <style>
         .card.text-white .card-footer .text-muted {
@@ -85,6 +86,15 @@
 
     const api = new Api("http://localhost:8080", "default");
     let selectedThing = null;
+    let showDesired = false;
+
+    function toggleDesired(flag) {
+        showDesired = !showDesired;
+        if (selectedThing) {
+            selectedThing.options.showDesired = showDesired;
+            selectedThing.render();
+        }
+    }
 
     function showThing(thing) {
 
@@ -103,8 +113,11 @@
 
         selectedThing = new ThingCard(new Thing(api, thing), card, {
             showTimestamps: true,
-            showDesired: true,
+            showDesired: showDesired,
             controlDesired: true,
+            refClicked: (ref) => {
+                showThing(ref);
+            }
         });
     }
 
@@ -118,6 +131,9 @@
         showThing(ele.val());
         ele.blur();
     });
+    $('#lookup-thing-name').on('keydown', e => {
+        e.stopPropagation();
+    });
     $('body').on('keydown', e => {
         if (e.key === '/') {
             e.preventDefault();
@@ -130,7 +146,7 @@
     if (selected !== undefined && selected !== "") {
         showThing(selected.substring(1));
     } else {
-        showThing("foo");
+        showThing("/");
     }
 
 </script>

@@ -2,8 +2,6 @@
 
 class Api {
     constructor(url, application) {
-        this.url = new URL(url);
-
         this.websocketUrl = new URL(url);
 
         if (this.websocketUrl.protocol === "http:") {
@@ -52,13 +50,13 @@ class Thing {
                 })
             }
         });
-        this.#socket.addEventListener('close', (event) => {
+        this.#socket.addEventListener('close', () => {
             this.#notifyAll({
                 type: "disconnected"
             })
             this.#reconnect();
         });
-        this.#socket.addEventListener('error', (event) => {
+        this.#socket.addEventListener('error', () => {
             this.#notifyAll({
                 type: "disconnected"
             })
@@ -158,11 +156,11 @@ class ThingCard {
         this.options = {
             ...{
                 showTimestamps: false,
-                labelsToCardStyle: (labels) => {
+                labelsToCardStyle: (_labels) => {
                 },
-                labelsToPropertyStyle: (labels, propertyName) => {
+                labelsToPropertyStyle: (_labels, _propertyName) => {
                 },
-                refClicked: (ref) => {
+                refClicked: (_ref) => {
                 },
                 showDesired: false,
                 controlDesired: false,
@@ -232,6 +230,10 @@ class ThingCard {
         }
     }
 
+    render() {
+        this.#render();
+    }
+
     #render() {
         if (this.#card === undefined) {
             console.debug("Invalid card target for", this.thing)
@@ -240,7 +242,7 @@ class ThingCard {
 
         const labels = this.state?.metadata?.labels || {};
 
-        if (this.connected) {
+        if (this.connected && (this.state?.metadata?.deletionTimestamp === undefined)) {
 
             let classes = "card ";
 
@@ -259,11 +261,11 @@ class ThingCard {
             }
 
             this.#card.attr('class', classes);
-            this.#card.find(".drogue-thing-sub-state").text(`Last Update: ${timestampString(this.lastUpdate)}`)
+            this.#card.find(".drogue-thing-sub-state").text(`Last Update: ${timestampString(this.lastUpdate, true)}`)
 
         } else {
             this.#card.attr('class', "card text-white bg-secondary drogue-thing-sub-disconnected");
-            this.#card.find(".drogue-thing-sub-state").text(`Disconnected: ${timestampString(this.lastUpdate)}`)
+            this.#card.find(".drogue-thing-sub-state").text(`Disconnected: ${timestampString(this.lastUpdate, true)}`)
         }
 
         const badges = $('<span></span>');
@@ -320,16 +322,40 @@ class ThingCard {
 
         for (const [key, value] of Object.entries(this.state?.mergedState || {}).sort()) {
             // console.debug("Key:", key, " Value:", value);
-            const renderedValue = renderValue(value.value);
+
+            let renderedValue;
+            let renderedType;
+            if (key.startsWith("$")) {
+                renderedValue = renderReferences(value.value);
+                renderedType = "";
+            } else {
+                renderedValue = renderValue(value.value);
+                renderedType = renderType(value.value);
+            }
+
             const lastUpdate = makeDate(value?.lastUpdate);
-            const synBadge = value.synthetic ? ` <span class="badge text-bg-light">syn</span>` : "";
+
+            let keyExtras = "";
+
+            if (value.synthetic) {
+                keyExtras += ` <span class="badge text-bg-light">syn</span>`;
+            }
+
+            if (key === '$parent') {
+                keyExtras += ` ${renderReference(value.value, '<i class="bi bi-arrow-90deg-up"></i>')}`;
+            }
 
             let row = $(`
 <li class="list-group-item d-flex">
-    <div class="col fw-bold">${key}${synBadge}</div>
-    <div class="col pe-4 text-end">${renderedValue} ${renderType(value.value)}</div>
-    <div class="col text-muted text-end">${timestampString(lastUpdate)}</div>
+    <div class="col fw-bold">${key}${keyExtras}</div>
+    <div class="col pe-4 text-end text-truncate">${renderedValue} ${renderedType}</div>
+    <div class="col text-muted text-end">${timestampString(lastUpdate, !this.options.showDesired)}</div>
 </li>`);
+            row.find('a[data-drogue-ref]').on('click', (event) => {
+                const ele = $(event.currentTarget);
+                const ref = ele.attr('data-drogue-ref');
+                this.options.refClicked(ref);
+            })
 
             if (this.options.showDesired) {
                 if (value.desired !== undefined) {
@@ -376,14 +402,15 @@ class ThingCard {
                 } else {
                     row.append($(`<div class="col"></div><div class="col"></div><div class="col"></div><div class="col"></div>`))
                 }
-            }
 
-            if (this.options.controlDesired) {
-                if (value.desired !== undefined) {
-                    row.append($(`<div class="col text-end"><button class="btn btn-outline-secondary" data-set-desired-start="${key}">Set</button></div>`));
-                } else {
-                    row.append($(`<div class="col text-end"></div>`));
+                if (this.options.controlDesired) {
+                    if (value.desired !== undefined) {
+                        row.append($(`<div class="col text-end"><button class="btn btn-outline-secondary" data-set-desired-start="${key}">Set</button></div>`));
+                    } else {
+                        row.append($(`<div class="col text-end"></div>`));
+                    }
                 }
+
             }
 
             all.append(row);
@@ -581,7 +608,7 @@ class ThingCard {
             let content;
             if (value?.value) {
                 content = $(`<ul class="drogue-ref-group">`);
-                for (const [ref, v] of Object.entries(value?.value)) {
+                for (const [ref, _] of Object.entries(value?.value)) {
                     const link = $(`<a class="drogue-thing-ref">${ref}</a>`);
                     link.on("click", () => {
                         console.debug("Clicked: ", ref);
@@ -619,7 +646,7 @@ function makeDate(value) {
 }
 
 // render a timestamp
-function timestampString(date) {
+function timestampString(date, noBreak) {
     if (date === undefined) {
         return "<unknown>";
     }
@@ -637,7 +664,11 @@ function timestampString(date) {
         timeZoneName: "short"
     }).format(date);
 
-    return t + "<br>" + d;
+    if (noBreak) {
+        return t + " " + d;
+    } else {
+        return t + "<br>" + d;
+    }
 }
 
 function renderType(value) {
@@ -647,6 +678,34 @@ function renderType(value) {
     }
 
     return `<span class="badge text-bg-light">${type}</span>`;
+}
+
+function renderReference(value, label) {
+    let encodedValue = value.replace(/[\u00A0-\u9999<>&]/g, function(i) {
+        return '&#'+i.charCodeAt(0)+';';
+    });
+
+    if (label === undefined) {
+        label = encodedValue;
+    }
+
+    return `<a class="drogue-thing-ref" data-drogue-ref="${encodedValue}">${label}</a>`;
+}
+
+function renderReferences(value) {
+
+    if (typeof value === "object") {
+        let refs = ``;
+        for (const [k, _] of Object.entries(value)) {
+            refs += `<li>${renderReferences(k)}</li>`;
+        }
+        return `<ul class="drogue-ref-group">${refs}</ul>`;
+    } else if (typeof value === "string" ) {
+        return renderReference(value);
+    } else {
+        return "";
+    }
+
 }
 
 function renderValue(value, pretty) {

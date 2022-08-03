@@ -101,6 +101,10 @@ pub fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
                 .route(web::put().to(endpoints::things_update_reconciliation::<S, N, Si, Cmd>)),
         );
         ctx.service(
+            web::resource("/api/v1alpha1/things/{application}/things/{thing}/annotations")
+                .route(web::put().to(endpoints::things_update_annotations::<S, N, Si, Cmd>)),
+        );
+        ctx.service(
             web::resource("/api/v1alpha1/things/{application}/notifications")
                 .route(web::get().to(endpoints::things_notifications::<S, N, Si, Cmd>)),
         );

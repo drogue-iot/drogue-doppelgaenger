@@ -109,7 +109,7 @@ fn extract_meta(msg: &BorrowedMessage) -> anyhow::Result<(String, String, String
     let mut id = None;
     let mut timestamp = None;
     let mut application = None;
-    let mut device = None;
+    let mut thing = None;
 
     for i in 0..headers.count() {
         match headers.get_as::<str>(i) {
@@ -122,8 +122,8 @@ fn extract_meta(msg: &BorrowedMessage) -> anyhow::Result<(String, String, String
             Some(("application", Ok(value))) => {
                 application = Some(value);
             }
-            Some(("device", Ok(value))) => {
-                device = Some(value);
+            Some(("thing", Ok(value))) => {
+                thing = Some(value);
             }
             _ => {}
         }
@@ -138,15 +138,15 @@ fn extract_meta(msg: &BorrowedMessage) -> anyhow::Result<(String, String, String
         application
             .ok_or_else(|| anyhow!("Missing 'application' header"))?
             .to_string(),
-        device
-            .ok_or_else(|| anyhow!("Missing 'device' header"))?
+        thing
+            .ok_or_else(|| anyhow!("Missing 'thing' header"))?
             .to_string(),
     ))
 }
 
 /// Parse a Kafka message into an [`Event`].
 fn from_msg(msg: &BorrowedMessage) -> anyhow::Result<Event> {
-    let (id, timestamp, application, device) = extract_meta(msg)?;
+    let (id, timestamp, application, thing) = extract_meta(msg)?;
 
     let message = serde_json::from_slice(msg.payload().ok_or_else(|| anyhow!("Missing payload"))?)?;
 
@@ -154,7 +154,7 @@ fn from_msg(msg: &BorrowedMessage) -> anyhow::Result<Event> {
         id,
         timestamp: timestamp.parse()?,
         application,
-        device,
+        thing,
         message,
     })
 }

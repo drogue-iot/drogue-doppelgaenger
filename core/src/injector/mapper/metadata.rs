@@ -27,6 +27,7 @@ pub struct Meta {
     pub timestamp: DateTime<Utc>,
     pub application: String,
     pub device: String,
+    pub channel: String,
 }
 
 impl MetadataMapper {
@@ -59,6 +60,11 @@ impl MetadataMapper {
             .ok_or_else(|| anyhow!("Missing 'device' extension value"))?
             .to_string();
 
+        let channel = event
+            .subject()
+            .ok_or_else(|| anyhow!("Missing 'subject' value"))?
+            .to_string();
+
         let id = event.id().to_string();
         let timestamp = event.time().copied().unwrap_or_else(Utc::now);
 
@@ -67,6 +73,7 @@ impl MetadataMapper {
             timestamp,
             application,
             device,
+            channel,
         }))
     }
 }
