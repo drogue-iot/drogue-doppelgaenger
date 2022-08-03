@@ -4,13 +4,13 @@ pub mod source;
 use crate::{
     app::Spawner,
     command::CommandSink,
-    model::{Thing, WakerReason},
+    model::{Reconciliation, Thing, WakerReason},
     notifier::Notifier,
     processor::{sink::Sink, source::Source},
     service::{
-        self, DesiredStateValueUpdater, DesiredStateValueUpdaterError, Id, JsonMergeUpdater,
-        JsonPatchUpdater, MergeError, PatchError, ReportedStateUpdater, Service, UpdateMode,
-        UpdateOptions, Updater,
+        self, Cleanup, DesiredStateValueUpdater, Id, InfallibleUpdater, JsonMergeUpdater,
+        JsonPatchUpdater, MapValueInserter, MapValueRemover, ReportedStateUpdater, Service,
+        UpdateMode, UpdateOptions, Updater, UpdaterExt,
     },
     storage::{self, Storage},
 };
@@ -23,7 +23,7 @@ use prometheus::{
     IntCounterVec,
 };
 use serde_json::Value;
-use std::{collections::BTreeMap, convert::Infallible};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 lazy_static! {
@@ -40,6 +40,7 @@ pub struct Event {
     pub id: String,
     pub timestamp: DateTime<Utc>,
     pub application: String,
+    // FIXME: rename to thing
     pub device: String,
     pub message: Message,
 }
@@ -89,6 +90,44 @@ pub enum Message {
     Wakeup {
         reasons: Vec<WakerReason>,
     },
+    /// Create a thing if it doesn't yet exists, and register a child.
+    RegisterChild {
+        #[serde(rename = "$ref")]
+        r#ref: String,
+        #[serde(default)]
+        template: ThingTemplate,
+    },
+    /// Unregister a child, and delete the thing if it was the last child.
+    UnregisterChild {
+        #[serde(rename = "$ref")]
+        r#ref: String,
+    },
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThingTemplate {
+    #[serde(default, skip_serializing_if = "Reconciliation::is_empty")]
+    pub reconciliation: Reconciliation,
+}
+
+impl InfallibleUpdater for ThingTemplate {
+    fn update(&self, mut thing: Thing) -> Thing {
+        thing
+            .reconciliation
+            .changed
+            .extend(self.reconciliation.changed.clone());
+        thing
+            .reconciliation
+            .timers
+            .extend(self.reconciliation.timers.clone());
+        thing
+            .reconciliation
+            .deleting
+            .extend(self.reconciliation.deleting.clone());
+
+        thing
+    }
 }
 
 impl Message {
@@ -146,11 +185,9 @@ impl From<ReportStateBuilder> for ReportedStateUpdater {
     }
 }
 
-impl Updater for ReportStateBuilder {
-    type Error = <ReportedStateUpdater as Updater>::Error;
-
-    fn update(self, thing: Thing) -> Result<Thing, Self::Error> {
-        ReportedStateUpdater::from(self).update(thing)
+impl InfallibleUpdater for ReportStateBuilder {
+    fn update(&self, thing: Thing) -> Thing {
+        InfallibleUpdater::update(&ReportedStateUpdater::from(self.clone()), thing)
     }
 }
 
@@ -195,15 +232,189 @@ where
         Self { service, source }
     }
 
+    /// Cleanup a thing, ignore if missing.
+    ///
+    /// NOTE: This function respects a change in the `deletion_timestamp` and will trigger a
+    /// deletion if the updater sets it.
+    async fn run_cleanup<U>(
+        service: &Service<St, No, Si, Cmd>,
+        id: &Id,
+        updater: U,
+    ) -> Result<(), anyhow::Error>
+    where
+        U: Updater + Send + Sync,
+    {
+        let opts = UpdateOptions {
+            ignore_unclean_inbox: false,
+        };
+
+        loop {
+            let thing = service.get(&id).await?;
+            match thing {
+                Some(thing) => {
+                    if thing.metadata.deletion_timestamp.is_some() {
+                        log::debug!("Thing is already being deleted");
+                        // cleaned up
+                        break;
+                    }
+                    let thing = updater.update(thing)?;
+
+                    let result = if thing.metadata.deletion_timestamp.is_some() {
+                        // perform delete
+                        service
+                            .delete(&id, Some(&(&thing).into()))
+                            .await
+                            .map(|_| ())
+                    } else {
+                        // perform update
+                        service.update(&id, &thing, &opts).await.map(|_| ())
+                    };
+                    match result {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(service::Error::Storage(storage::Error::PreconditionFailed)) => {
+                            // retry
+                            continue;
+                        }
+                        Err(err) => {
+                            return Err(anyhow!(err));
+                        }
+                    }
+                }
+                None => {
+                    // cleaned up
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Either update or insert a new thing
+    async fn run_upsert<U>(
+        service: &Service<St, No, Si, Cmd>,
+        id: &Id,
+        updater: U,
+    ) -> Result<(), anyhow::Error>
+    where
+        U: Updater + Send + Sync,
+    {
+        let opts = UpdateOptions {
+            ignore_unclean_inbox: false,
+        };
+
+        // FIXME: consider taking this into the service
+
+        loop {
+            let thing = service.get(&id).await?;
+            match thing {
+                Some(thing) => {
+                    let thing = updater.update(thing)?;
+                    match service.update(&id, &thing, &opts).await {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(service::Error::Storage(
+                            storage::Error::NotFound | storage::Error::PreconditionFailed,
+                        )) => {
+                            // retry
+                            continue;
+                        }
+                        Err(err) => {
+                            return Err(anyhow!(err));
+                        }
+                    }
+                }
+                None => {
+                    let thing = Thing::new(&id.application, &id.thing);
+                    let thing = updater.update(thing)?;
+
+                    match service.create(thing).await {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(service::Error::Storage(storage::Error::AlreadyExists)) => {
+                            // retry
+                            continue;
+                        }
+                        Err(err) => {
+                            return Err(anyhow!(err));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn run_update<U>(
+        service: &Service<St, No, Si, Cmd>,
+        id: &Id,
+        updater: U,
+    ) -> Result<(), anyhow::Error>
+    where
+        U: Updater,
+    {
+        let opts = UpdateOptions {
+            ignore_unclean_inbox: false,
+        };
+
+        loop {
+            match service.update(id, &updater, &opts).await {
+                Ok(_) => {
+                    log::debug!("Processing complete ... ok!");
+                    UPDATES.with_label_values(&["ok"]).inc();
+                    break;
+                }
+                Err(service::Error::Storage(storage::Error::PreconditionFailed)) => {
+                    UPDATES.with_label_values(&["oplock"]).inc();
+                    // op-lock failure, retry
+                    continue;
+                }
+                Err(service::Error::Storage(storage::Error::NotFound)) => {
+                    UPDATES.with_label_values(&["not-found"]).inc();
+                    // the thing does not exists, skip
+                    break;
+                }
+                Err(service::Error::Storage(storage::Error::NotAllowed)) => {
+                    UPDATES.with_label_values(&["not-allowed"]).inc();
+                    // not allowed to modify thing, skip
+                    break;
+                }
+                Err(service::Error::Notifier(err)) => {
+                    UPDATES.with_label_values(&["notifier"]).inc();
+                    log::warn!("Failed to notify: {err}");
+                    // not much we can do
+                    // FIXME: consider using a circuit breaker
+                    break;
+                }
+                Err(service::Error::Machine(err)) => {
+                    UPDATES.with_label_values(&["machine"]).inc();
+                    log::info!("Failed to process state machine: {err}");
+                    // the state machine turned the state into some error (e.g. validation)
+                    // ignore and continue
+                    // FIXME: consider adding a "status" field with the error
+                    break;
+                }
+                Err(err) => {
+                    UPDATES.with_label_values(&["other"]).inc();
+                    log::warn!("Failed to process: {err}");
+                    return Err(anyhow!("Failed to process: {err}"));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn run(self) -> anyhow::Result<()> {
         self.source
             .run(|event| async {
                 log::debug!("Event: {event:?}");
                 EVENTS.inc();
-
-                let opts = UpdateOptions {
-                    ignore_unclean_inbox: false,
-                };
 
                 let _timer = PROCESSING_TIME.start_timer();
 
@@ -219,48 +430,51 @@ where
                     thing: device,
                 };
 
-                loop {
-                    match self.service.update(&id, message.clone(), &opts).await {
-                        Ok(_) => {
-                            log::debug!("Processing complete ... ok!");
-                            UPDATES.with_label_values(&["ok"]).inc();
-                            break;
-                        }
-                        Err(service::Error::Storage(storage::Error::PreconditionFailed)) => {
-                            UPDATES.with_label_values(&["oplock"]).inc();
-                            // op-lock failure, retry
-                            continue;
-                        }
-                        Err(service::Error::Storage(storage::Error::NotFound)) => {
-                            UPDATES.with_label_values(&["not-found"]).inc();
-                            // the thing does not exists, skip
-                            break;
-                        }
-                        Err(service::Error::Storage(storage::Error::NotAllowed)) => {
-                            UPDATES.with_label_values(&["not-allowed"]).inc();
-                            // not allowed to modify thing, skip
-                            break;
-                        }
-                        Err(service::Error::Notifier(err)) => {
-                            UPDATES.with_label_values(&["notifier"]).inc();
-                            log::warn!("Failed to notify: {err}");
-                            // not much we can do
-                            // FIXME: consider using a circuit breaker
-                            break;
-                        }
-                        Err(service::Error::Machine(err)) => {
-                            UPDATES.with_label_values(&["machine"]).inc();
-                            log::info!("Failed to process state machine: {err}");
-                            // the state machine turned the state into some error (e.g. validation)
-                            // ignore and continue
-                            // FIXME: consider adding a "status" field with the error
-                            break;
-                        }
-                        Err(err) => {
-                            UPDATES.with_label_values(&["other"]).inc();
-                            log::warn!("Failed to process: {err}");
-                            return Err(anyhow!("Failed to process: {err}"));
-                        }
+                match message {
+                    Message::RegisterChild { r#ref, template } => {
+                        Self::run_upsert(
+                            &self.service,
+                            &id,
+                            MapValueInserter("$children".to_string(), r#ref).and_then(template),
+                        )
+                        .await?;
+                    }
+                    Message::UnregisterChild { r#ref } => {
+                        Self::run_cleanup(
+                            &self.service,
+                            &id,
+                            MapValueRemover("$children".to_string(), r#ref)
+                                .and_then(Cleanup("$children".to_string())),
+                        )
+                        .await?;
+                    }
+                    Message::ReportState { state, partial } => {
+                        Self::run_update(
+                            &self.service,
+                            &id,
+                            ReportedStateUpdater(
+                                state,
+                                match partial {
+                                    true => UpdateMode::Merge,
+                                    false => UpdateMode::Replace,
+                                },
+                            ),
+                        )
+                        .await?
+                    }
+                    Message::Merge(merge) => {
+                        Self::run_update(&self.service, &id, JsonMergeUpdater(merge)).await?
+                    }
+                    Message::Patch(patch) => {
+                        Self::run_update(&self.service, &id, JsonPatchUpdater(patch)).await?
+                    }
+                    Message::Wakeup { reasons: _ } => {
+                        // don't do any real change, this will just reconcile and process what is necessary
+                        Self::run_update(&self.service, &id, ()).await?
+                    }
+                    Message::SetDesiredValue { values } => {
+                        Self::run_update(&self.service, &id, DesiredStateValueUpdater(values))
+                            .await?
                     }
                 }
 
@@ -271,43 +485,5 @@ where
         log::warn!("Event stream closed, exiting processor!");
 
         Ok(())
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum MessageError {
-    #[error("That should be impossible")]
-    Infallible(#[from] Infallible),
-    #[error("Failed to apply JSON patch: {0}")]
-    Patch(#[from] PatchError),
-    #[error("Failed to apply JSON merge: {0}")]
-    Merge(#[from] MergeError),
-    #[error("Failed to apply desired value: {0}")]
-    SetDesiredValues(#[from] DesiredStateValueUpdaterError),
-}
-
-impl Updater for Message {
-    type Error = MessageError;
-
-    fn update(self, thing: Thing) -> Result<Thing, MessageError> {
-        match self {
-            Message::ReportState { state, partial } => Ok(ReportedStateUpdater(
-                state,
-                match partial {
-                    true => UpdateMode::Merge,
-                    false => UpdateMode::Replace,
-                },
-            )
-            .update(thing)?),
-            Message::Patch(patch) => Ok(JsonPatchUpdater(patch).update(thing)?),
-            Message::Merge(merge) => Ok(JsonMergeUpdater(merge).update(thing)?),
-            Message::Wakeup { reasons: _ } => {
-                // don't do any real change, this will just reconcile and process what is necessary
-                Ok(thing)
-            }
-            Message::SetDesiredValue { values } => {
-                Ok(DesiredStateValueUpdater(values).update(thing)?)
-            }
-        }
     }
 }

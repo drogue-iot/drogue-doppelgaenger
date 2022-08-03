@@ -13,6 +13,7 @@ use drogue_doppelgaenger_core::{
     service::{Id, Service},
     storage::{Error, Storage},
     waker::{self, TargetId, Waker},
+    Preconditions,
 };
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 use std::convert::Infallible;
@@ -146,12 +147,30 @@ impl Storage for MockStorage {
         result
     }
 
-    async fn delete(&self, application: &str, name: &str) -> Result<bool, Error<Self::Error>> {
+    async fn delete_with(
+        &self,
+        application: &str,
+        name: &str,
+        opts: Preconditions<'_>,
+    ) -> Result<bool, Error<Self::Error>> {
         if application != self.application {
             return Ok(false);
         }
 
-        Ok(self.things.write().await.remove(name).is_some())
+        Ok(match self.things.write().await.entry(name.to_string()) {
+            Entry::Occupied(entry) => {
+                if !opts.matches(entry.get()) {
+                    false
+                } else {
+                    entry.remove();
+                    true
+                }
+            }
+            Entry::Vacant(entry) => {
+                // nothing do to
+                false
+            }
+        })
     }
 }
 

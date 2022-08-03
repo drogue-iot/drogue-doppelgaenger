@@ -1,19 +1,16 @@
 mod deno;
 mod desired;
+mod recon;
 
-use crate::command::Command;
-use crate::machine::deno::{DenoOptions, Json};
-use crate::machine::desired::{CommandBuilder, Context, DesiredReconciler, FeatureContext};
-use crate::model::{
-    Changed, Code, DesiredFeatureMethod, DesiredFeatureReconciliation, DesiredMode, JsonSchema,
-    Metadata, Reconciliation, Schema, SyntheticType, Thing, ThingState, Timer, WakerExt,
-    WakerReason,
+use crate::machine::recon::Reconciler;
+use crate::{
+    command::Command,
+    machine::deno::{DenoOptions, Json},
+    model::{Code, JsonSchema, Metadata, Schema, Thing, ThingState},
+    processor::Message,
 };
-use crate::processor::Message;
 use anyhow::anyhow;
-use chrono::{DateTime, Duration, Utc};
 use deno_core::url::Url;
-use indexmap::IndexMap;
 use jsonschema::{Draft, JSONSchema, SchemaResolver, SchemaResolverError};
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, Histogram};
@@ -25,10 +22,16 @@ lazy_static! {
         register_histogram!("timer_delay", "Amount of time by which timers are delayed").unwrap();
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OutboxMessage {
+    pub thing: String,
+    pub message: Message,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Mutator: {0}")]
-    Mutator(Box<dyn std::error::Error>),
+    Mutator(Box<dyn std::error::Error + Send + Sync>),
     #[error("Reconciler: {0}")]
     Reconcile(#[source] anyhow::Error),
     #[error("Validation failed: {0}")]
@@ -48,6 +51,11 @@ pub struct Outcome {
     pub commands: Vec<Command>,
 }
 
+pub struct DeletionOutcome {
+    pub thing: Thing,
+    pub outbox: Vec<OutboxMessage>,
+}
+
 impl Machine {
     pub fn new(thing: Thing) -> Self {
         Self { thing }
@@ -64,9 +72,6 @@ impl Machine {
         .update(|_| async { Ok::<_, Infallible>(new_thing) })
         .await?;
 
-        // validate the outcome
-        Self::validate(&outcome.new_thing)?;
-
         // done
         Ok(outcome)
     }
@@ -76,7 +81,7 @@ impl Machine {
     where
         F: FnOnce(Thing) -> Fut,
         Fut: Future<Output = Result<Thing, E>>,
-        E: std::error::Error + 'static,
+        E: std::error::Error + Send + Sync + 'static,
     {
         // capture immutable or internal metadata
         let Metadata {
@@ -84,6 +89,7 @@ impl Machine {
             application,
             uid,
             creation_timestamp,
+            deletion_timestamp,
             generation,
             resource_version,
             annotations: _,
@@ -126,6 +132,7 @@ impl Machine {
                 application,
                 uid,
                 creation_timestamp,
+                deletion_timestamp,
                 generation,
                 resource_version,
                 ..new_thing.metadata
@@ -139,6 +146,65 @@ impl Machine {
             new_thing,
             outbox,
             commands,
+        })
+    }
+
+    pub async fn delete(thing: Thing) -> Result<DeletionOutcome, Error> {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+
+        let thing = Arc::new(thing);
+        let mut deletion_outbox = vec![];
+
+        for (name, deleting) in &thing.reconciliation.deleting {
+            match &deleting.code {
+                Code::JavaScript(script) => {
+                    // We align with the names the other scripts
+                    #[derive(Clone, Debug, serde::Serialize)]
+                    #[serde(rename_all = "camelCase")]
+                    struct Input {
+                        current_state: Arc<Thing>,
+                        new_state: Arc<Thing>,
+
+                        outbox: Vec<OutboxMessage>,
+                        logs: Vec<String>,
+                    }
+                    #[derive(Clone, Default, Debug, serde::Deserialize)]
+                    #[serde(rename_all = "camelCase")]
+                    struct Output {
+                        #[serde(default)]
+                        outbox: Vec<OutboxMessage>,
+                        #[serde(default)]
+                        logs: Vec<String>,
+                    }
+
+                    let exec = deno::Execution::new(
+                        format!("delete-{}", name),
+                        script,
+                        DenoOptions { deadline },
+                    )
+                    .run::<_, Json<Output>, ()>(Input {
+                        current_state: thing.clone(),
+                        new_state: thing.clone(),
+                        outbox: vec![],
+                        logs: vec![],
+                    })
+                    .await
+                    .map_err(Error::Reconcile)?;
+
+                    // we can only ignore logs, as either we succeed (and would delete the logs)
+                    // or we fail, and don't store them.
+                    let Output {
+                        outbox,
+                        logs: _logs,
+                    } = exec.output.0;
+                    deletion_outbox.extend(outbox)
+                }
+            }
+        }
+
+        Ok(DeletionOutcome {
+            thing: (*thing).clone(),
+            outbox: deletion_outbox,
         })
     }
 
@@ -174,510 +240,6 @@ impl Machine {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct OutboxMessage {
-    pub thing: String,
-    pub message: Message,
-}
-
-pub struct Reconciler {
-    deadline: tokio::time::Instant,
-    current_thing: Arc<Thing>,
-    new_thing: Thing,
-    outbox: Vec<OutboxMessage>,
-    commands: Vec<Command>,
-}
-
-impl Reconciler {
-    pub fn new(current_thing: Arc<Thing>, new_thing: Thing) -> Self {
-        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(1);
-
-        Self {
-            current_thing,
-            new_thing,
-            deadline,
-            outbox: Default::default(),
-            commands: Default::default(),
-        }
-    }
-
-    pub async fn run(mut self) -> Result<Outcome, Error> {
-        // cleanup first
-        self.cleanup();
-
-        // detect reported state changes
-        self.sync_reported_state();
-
-        // synthetics
-        self.generate_synthetics().await?;
-
-        // run code
-        let Reconciliation { changed, timers } = self.new_thing.reconciliation.clone();
-        self.reconcile_changed(changed).await?;
-        self.reconcile_timers(timers).await?;
-
-        // reconcile desired state
-        self.reconcile_desired_state().await?;
-
-        Ok(Outcome {
-            new_thing: self.new_thing,
-            outbox: self.outbox,
-            commands: self.commands,
-        })
-    }
-
-    fn cleanup(&mut self) {
-        // clear reconcile waker
-        self.new_thing.clear_wakeup(WakerReason::Reconcile);
-
-        // clear old logs first, otherwise logging of state will continuously grow
-        // FIXME: remove when we only send a view of the state to the reconcile code
-        for (_, v) in &mut self.new_thing.reconciliation.changed {
-            v.last_log.clear();
-        }
-    }
-
-    fn sync_reported_state(&mut self) {
-        // we ensure that all reported values which changed from the previous value get an updated
-        // last_update timestamp
-        for (k, next) in &mut self.new_thing.reported_state {
-            if let Some(previous) = self.current_thing.reported_state.get(k) {
-                if previous.value != next.value {
-                    next.last_update = Utc::now();
-                }
-            }
-        }
-    }
-
-    async fn generate_synthetics(&mut self) -> Result<(), Error> {
-        let now = Utc::now();
-
-        let new_state = Arc::new(self.new_thing.clone());
-
-        for (name, mut syn) in &mut self.new_thing.synthetic_state {
-            let value =
-                Self::run_synthetic(name, &syn.r#type, new_state.clone(), self.deadline).await?;
-            if syn.value != value {
-                syn.value = value;
-                syn.last_update = now;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// sync the state with the reported and expected state
-    fn sync_desired_state(&mut self) -> Result<(), Error> {
-        let mut waker = self.new_thing.waker();
-
-        for (name, mut desired) in &mut self.new_thing.desired_state {
-            // update the last change timestamp
-
-            // find the current value
-            let reported_value = self
-                .new_thing
-                .synthetic_state
-                .get(name)
-                .map(|state| &state.value)
-                .or_else(|| {
-                    self.new_thing
-                        .reported_state
-                        .get(name)
-                        .map(|state| &state.value)
-                })
-                .unwrap_or(&Value::Null);
-            let desired_value = &desired.value;
-
-            // check if there is a change from the previous state
-            if let Some(previous) = self.current_thing.desired_state.get(name) {
-                if previous.value != desired.value || previous.valid_until != desired.valid_until {
-                    // desired value changed, start reconciling again
-                    desired.reconciliation =
-                        DesiredFeatureReconciliation::Reconciling { last_attempt: None };
-                    desired.last_update = Utc::now();
-                }
-            }
-
-            if matches!(desired.method, DesiredFeatureMethod::Manual) {
-                continue;
-            }
-
-            match (&desired.reconciliation, &desired.mode) {
-                // Mode is disabled, and we already are ...
-                (DesiredFeatureReconciliation::Disabled { .. }, DesiredMode::Disabled) => {
-                    // ... do nothing
-                }
-
-                // Mode is disabled, but we are not...
-                (_, DesiredMode::Disabled) => {
-                    // ... mark disabled
-                    desired.reconciliation =
-                        DesiredFeatureReconciliation::Disabled { when: Utc::now() };
-                }
-
-                // Mode is not disabled, but we are are
-                (DesiredFeatureReconciliation::Disabled { .. }, _) => {
-                    if reported_value != desired_value {
-                        // not the same
-                        if desired.valid_until.map(|u| u > Utc::now()).unwrap_or(true) {
-                            // the value is still valid, back to reconciling
-                            desired.reconciliation =
-                                DesiredFeatureReconciliation::Reconciling { last_attempt: None };
-                        } else {
-                            // the value is no longer valid
-                            desired.reconciliation = DesiredFeatureReconciliation::Failed {
-                                when: Utc::now(),
-                                reason: Some(
-                                    "Activated reconciliation with expired value".to_string(),
-                                ),
-                            };
-                        }
-                    } else {
-                        // equals => means success
-                        desired.reconciliation =
-                            DesiredFeatureReconciliation::Succeeded { when: Utc::now() }
-                    }
-                }
-
-                // Mode is "keep sync", and we succeeded
-                (DesiredFeatureReconciliation::Succeeded { .. }, DesiredMode::Sync) => {
-                    // if we should keep it in sync, check values and if the value is still valid
-                    if reported_value != desired_value
-                        && desired.valid_until.map(|u| u > Utc::now()).unwrap_or(true)
-                    {
-                        // if not, back to reconciling
-                        desired.reconciliation =
-                            DesiredFeatureReconciliation::Reconciling { last_attempt: None };
-
-                        if let Some(valid_until) = desired.valid_until {
-                            // and set waker
-                            waker.wakeup_at(valid_until, WakerReason::Reconcile);
-                        }
-                    }
-                }
-
-                // succeeded and not (sync), or failed
-                (DesiredFeatureReconciliation::Succeeded { .. }, _)
-                | (DesiredFeatureReconciliation::Failed { .. }, _) => {
-                    // we do nothing
-                }
-
-                // we are reconciling
-                (DesiredFeatureReconciliation::Reconciling { .. }, _) => {
-                    if reported_value == desired_value {
-                        // value changed to expected value -> success
-                        desired.reconciliation =
-                            DesiredFeatureReconciliation::Succeeded { when: Utc::now() };
-                    } else if let Some(valid_until) = desired.valid_until {
-                        // value did not change to expected value, and expired -> failure
-                        if valid_until < Utc::now() {
-                            desired.reconciliation = DesiredFeatureReconciliation::Failed {
-                                when: Utc::now(),
-                                reason: None,
-                            };
-                        } else {
-                            // otherwise, start waker
-                            waker.wakeup_at(valid_until, WakerReason::Reconcile);
-                        }
-                    }
-                    // else -> keep going
-                }
-            }
-        }
-
-        // set possible waker
-
-        self.new_thing.set_waker(waker);
-
-        // done
-
-        Ok(())
-    }
-
-    async fn reconcile_desired_state(&mut self) -> Result<(), Error> {
-        // sync first
-        self.sync_desired_state()?;
-
-        // get the current waker
-        let mut waker = self.new_thing.waker();
-        let new_thing = Arc::new(self.new_thing.clone());
-
-        let mut commands = CommandBuilder::default();
-
-        let mut context = Context {
-            new_thing,
-            deadline: self.deadline,
-            waker: &mut waker,
-            commands: &mut commands,
-        };
-
-        // process next
-        for (name, desired) in &mut self.new_thing.desired_state {
-            let value = desired.value.clone();
-
-            match &mut desired.reconciliation {
-                DesiredFeatureReconciliation::Disabled { .. }
-                | DesiredFeatureReconciliation::Succeeded { .. }
-                | DesiredFeatureReconciliation::Failed { .. } => {
-                    // we do nothing
-                }
-                DesiredFeatureReconciliation::Reconciling { last_attempt } => {
-                    match &desired.method {
-                        DesiredFeatureMethod::Manual | DesiredFeatureMethod::External => {
-                            // we do nothing
-                        }
-
-                        DesiredFeatureMethod::Command(command) => command
-                            .reconcile(
-                                &mut context,
-                                FeatureContext {
-                                    name,
-                                    last_attempt,
-                                    value,
-                                },
-                            )
-                            .await
-                            .map_err(|err| Error::Reconcile(anyhow!(err)))?,
-
-                        DesiredFeatureMethod::Code(code) => code
-                            .reconcile(
-                                &mut context,
-                                FeatureContext {
-                                    name,
-                                    last_attempt,
-                                    value,
-                                },
-                            )
-                            .await
-                            .map_err(Error::Reconcile)?,
-                    }
-                }
-            }
-        }
-
-        self.commands.extend(
-            commands
-                .into_commands(&self.new_thing.metadata.application)
-                .map_err(|err| Error::Reconcile(anyhow!(err)))?,
-        );
-
-        // set waker, possibly changed
-        self.new_thing.set_waker(waker);
-
-        // done
-        Ok(())
-    }
-
-    async fn reconcile_changed(&mut self, changed: IndexMap<String, Changed>) -> Result<(), Error> {
-        for (name, mut changed) in changed {
-            let ExecutionResult { logs } = self
-                .run_code(format!("changed-{}", name), &changed.code)
-                .await?;
-
-            changed.last_log = logs;
-            self.new_thing.reconciliation.changed.insert(name, changed);
-        }
-
-        Ok(())
-    }
-
-    async fn reconcile_timers(&mut self, timers: IndexMap<String, Timer>) -> Result<(), Error> {
-        for (name, mut timer) in timers {
-            let due = match timer.stopped {
-                true => {
-                    // timer is stopped, just keep it stopped
-                    timer.last_started = None;
-                    None
-                }
-                false => {
-                    let last_started = match timer.last_started {
-                        None => {
-                            let now = Utc::now();
-                            timer.last_started = Some(now);
-                            now
-                        }
-                        Some(last_started) => last_started,
-                    };
-
-                    // now check if the timer is due
-                    match (timer.last_run, timer.initial_delay) {
-                        (Some(last_run), _) => {
-                            // timer already ran, check if it is due again
-                            Some(Self::find_next_run_from(
-                                last_started,
-                                timer.period,
-                                last_run,
-                            ))
-                        }
-                        (None, None) => {
-                            // timer never ran, and there is no delay, run now
-                            Some(Utc::now())
-                        }
-                        (None, Some(initial_delay)) => {
-                            // timer never ran, check it the first run is due
-                            Some(
-                                last_started
-                                    + Duration::from_std(initial_delay)
-                                        .unwrap_or_else(|_| Duration::max_value()),
-                            )
-                        }
-                    }
-                }
-            };
-
-            if let Some(due) = due {
-                let diff = Utc::now() - due;
-
-                let next_run = if diff >= Duration::zero() {
-                    log::debug!("Late by: {diff}");
-                    TIMER_DELAY.observe(diff.num_milliseconds() as f64);
-
-                    let now = Utc::now();
-
-                    self.run_code(format!("timer-{}", name), &timer.code)
-                        .await?;
-
-                    let next_run =
-                        Self::find_next_run(timer.last_started.unwrap_or(now), timer.period);
-
-                    log::info!("Next run: {next_run}");
-
-                    timer.last_run = Some(now);
-
-                    next_run
-                } else {
-                    due
-                };
-
-                self.new_thing.wakeup_at(next_run, WakerReason::Reconcile);
-            }
-
-            self.new_thing.reconciliation.timers.insert(name, timer);
-        }
-
-        Ok(())
-    }
-
-    async fn run_code(&mut self, name: String, code: &Code) -> Result<ExecutionResult, Error> {
-        match code {
-            Code::JavaScript(script) => {
-                #[derive(serde::Serialize)]
-                #[serde(rename_all = "camelCase")]
-                struct Input {
-                    current_state: Arc<Thing>,
-                    new_state: Thing,
-                    // the following items are scooped off by the output, but we need to initialize
-                    // them to present, but empty values for the scripts.
-                    outbox: Vec<Value>,
-                    logs: Vec<Value>,
-                }
-
-                #[derive(Clone, Default, Debug, serde::Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                pub struct Output {
-                    #[serde(default)]
-                    new_state: Option<Thing>,
-                    #[serde(default)]
-                    outbox: Vec<OutboxMessage>,
-                    #[serde(default)]
-                    logs: Vec<String>,
-                    #[serde(default, with = "deno::duration")]
-                    waker: Option<Duration>,
-                }
-
-                let opts = DenoOptions {
-                    deadline: self.deadline,
-                };
-                let deno = deno::Execution::new(name, script, opts);
-                let out = deno
-                    .run::<_, Json<Output>, ()>(Input {
-                        current_state: self.current_thing.clone(),
-                        new_state: self.new_thing.clone(),
-                        outbox: vec![],
-                        logs: vec![],
-                    })
-                    .await
-                    .map_err(Error::Reconcile)?;
-
-                // FIXME: record error (if any)
-
-                let Output {
-                    new_state,
-                    waker,
-                    outbox,
-                    logs,
-                } = out.output.0;
-
-                let mut new_state = new_state.unwrap_or_else(|| self.new_thing.clone());
-
-                // schedule the waker, in the new state
-                if let Some(duration) = waker {
-                    new_state.wakeup(duration, WakerReason::Reconcile);
-                }
-                // set the new state
-                self.new_thing = new_state;
-                // extend outbox
-                self.outbox.extend(outbox);
-
-                // done
-                Ok(ExecutionResult { logs })
-            }
-        }
-    }
-
-    async fn run_synthetic(
-        name: &str,
-        r#type: &SyntheticType,
-        new_state: Arc<Thing>,
-        deadline: tokio::time::Instant,
-    ) -> Result<Value, Error> {
-        match r#type {
-            SyntheticType::JavaScript(script) => {
-                #[derive(serde::Serialize)]
-                #[serde(rename_all = "camelCase")]
-                struct Input {
-                    new_state: Arc<Thing>,
-                }
-
-                let opts = DenoOptions { deadline };
-                let deno = deno::Execution::new(name, script, opts);
-                let out = deno
-                    .run::<_, (), Value>(Input { new_state })
-                    .await
-                    .map_err(Error::Reconcile)?;
-
-                Ok(out.return_value)
-            }
-            SyntheticType::Alias(alias) => match new_state.reported_state.get(alias) {
-                Some(value) => Ok(value.value.clone()),
-                None => Ok(Value::Null),
-            },
-        }
-    }
-
-    fn find_next_run_from(
-        last_started: DateTime<Utc>,
-        period: std::time::Duration,
-        now: DateTime<Utc>,
-    ) -> DateTime<Utc> {
-        let period_ms = period.as_millis().clamp(0, u32::MAX as u128) as u32;
-        let diff = (now - last_started).num_milliseconds();
-
-        if diff < 0 {
-            return Utc::now();
-        }
-
-        let diff = diff.clamp(0, u32::MAX as i64) as u32;
-        let periods = (diff / period_ms) + 1;
-
-        last_started + Duration::milliseconds((periods * period_ms) as i64)
-    }
-
-    fn find_next_run(last_started: DateTime<Utc>, period: std::time::Duration) -> DateTime<Utc> {
-        Self::find_next_run_from(last_started, period, Utc::now())
-    }
-}
-
 pub struct ExecutionResult {
     pub logs: Vec<String>,
 }
@@ -696,7 +258,6 @@ mod test {
     use crate::model::{Metadata, ReportedFeature};
     use chrono::{DateTime, TimeZone, Utc};
     use std::collections::BTreeMap;
-    use std::time::Duration;
 
     #[tokio::test]
     async fn test_create() {
@@ -795,6 +356,7 @@ mod test {
             application: "default".to_string(),
             uid: Some(UID.to_string()),
             creation_timestamp: Some(creation_timestamp()),
+            deletion_timestamp: None,
             generation: Some(1),
             resource_version: Some("1".to_string()),
             annotations: Default::default(),
@@ -812,30 +374,5 @@ mod test {
             reconciliation: Default::default(),
             internal: Default::default(),
         }
-    }
-
-    #[test]
-    fn test_next() {
-        assert_next((0, 0, 0), (0, 1, 0), 1, (0, 1, 1));
-        assert_next((0, 0, 0), (0, 1, 2), 10, (0, 1, 10));
-        assert_next((0, 0, 0), (0, 0, 1), 1, (0, 0, 2));
-    }
-
-    fn assert_next(
-        started: (u32, u32, u32),
-        now: (u32, u32, u32),
-        period: u64,
-        expected: (u32, u32, u32),
-    ) {
-        let day = Utc.ymd(2022, 1, 1);
-
-        assert_eq!(
-            Reconciler::find_next_run_from(
-                day.and_hms(started.0, started.1, started.2),
-                Duration::from_secs(period),
-                day.and_hms(now.0, now.1, now.2)
-            ),
-            day.and_hms(expected.0, expected.1, expected.2)
-        );
     }
 }

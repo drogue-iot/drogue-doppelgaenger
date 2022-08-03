@@ -53,7 +53,7 @@ pub async fn things_update<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     let payload = payload.into_inner();
 
     service
-        .update(&Id { application, thing }, payload, &OPTS)
+        .update(&Id { application, thing }, &payload, &OPTS)
         .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
@@ -67,7 +67,7 @@ pub async fn things_patch<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     let payload = payload.into_inner();
 
     service
-        .update(&path.into_inner(), JsonPatchUpdater(payload), &OPTS)
+        .update(&path.into_inner(), &JsonPatchUpdater(payload), &OPTS)
         .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
@@ -81,7 +81,7 @@ pub async fn things_merge<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     let payload = payload.into_inner();
 
     service
-        .update(&path.into_inner(), JsonMergeUpdater(payload), &OPTS)
+        .update(&path.into_inner(), &JsonMergeUpdater(payload), &OPTS)
         .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
@@ -97,7 +97,7 @@ pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink, Cmd
     service
         .update(
             &path.into_inner(),
-            ReportedStateUpdater(payload, UpdateMode::Merge),
+            &ReportedStateUpdater(payload, UpdateMode::Merge),
             &OPTS,
         )
         .await?;
@@ -116,7 +116,7 @@ pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink, Cm
     service
         .update(
             &Id::new(application, thing),
-            SyntheticStateUpdater(state, payload),
+            &SyntheticStateUpdater(state, payload),
             &OPTS,
         )
         .await?;
@@ -135,7 +135,7 @@ pub async fn things_update_desired_state<S: Storage, N: Notifier, Si: Sink, Cmd:
     service
         .update(
             &Id::new(application, thing),
-            DesiredStateUpdater(state, payload),
+            &DesiredStateUpdater(state, payload),
             &OPTS,
         )
         .await?;
@@ -176,7 +176,7 @@ pub async fn things_update_desired_state_value<
     service
         .update(
             &Id::new(application, thing),
-            DesiredStateValueUpdater(values),
+            &DesiredStateValueUpdater(values),
             &OPTS,
         )
         .await?;
@@ -191,7 +191,7 @@ pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink, Cmd
 ) -> Result<HttpResponse, actix_web::Error> {
     let payload = payload.into_inner();
 
-    service.update(&path.into_inner(), payload, &OPTS).await?;
+    service.update(&path.into_inner(), &payload, &OPTS).await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }
@@ -200,7 +200,8 @@ pub async fn things_delete<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    service.delete(&path.into_inner()).await?;
+    // FIXME: allow adding preconditions
+    service.delete(&path.into_inner(), None).await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }

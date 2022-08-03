@@ -1,12 +1,17 @@
 pub mod postgres;
 
-use crate::model::{Metadata, Thing};
+use crate::{
+    model::{Metadata, Thing},
+    Preconditions,
+};
 use async_trait::async_trait;
-use std::fmt::Debug;
-use std::future::Future;
+use std::{fmt::Debug, future::Future};
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error<E> {
+pub enum Error<E>
+where
+    E: Send + Sync,
+{
     /// Returned when an option should modify a thing, but it could not be found.
     ///
     /// Not used, when not finding the things isn't a problem.
@@ -27,7 +32,11 @@ pub enum Error<E> {
 }
 
 #[derive(thiserror::Error)]
-pub enum UpdateError<SE, UE> {
+pub enum UpdateError<SE, UE>
+where
+    SE: Send + Sync,
+    UE: Send + Sync,
+{
     #[error("Service error: {0}")]
     Service(#[from] Error<SE>),
     #[error("Mutator error: {0}")]
@@ -37,7 +46,7 @@ pub enum UpdateError<SE, UE> {
 #[async_trait]
 pub trait Storage: Sized + Send + Sync + 'static {
     type Config: Clone + Debug + Send + Sync + serde::de::DeserializeOwned + 'static;
-    type Error: std::error::Error + Debug;
+    type Error: std::error::Error + Debug + Send + Sync;
 
     fn from_config(config: &Self::Config) -> anyhow::Result<Self>;
 
@@ -66,6 +75,7 @@ pub trait Storage: Sized + Send + Sync + 'static {
             application,
             uid,
             creation_timestamp,
+            deletion_timestamp,
             resource_version,
             generation,
             annotations: _,
@@ -81,6 +91,7 @@ pub trait Storage: Sized + Send + Sync + 'static {
             application,
             uid,
             creation_timestamp,
+            deletion_timestamp,
             resource_version,
             generation,
             ..new_thing.metadata
@@ -97,5 +108,16 @@ pub trait Storage: Sized + Send + Sync + 'static {
     }
 
     /// Delete a thing. Return `true` if the thing was deleted, `false` if it didn't exist.
-    async fn delete(&self, application: &str, name: &str) -> Result<bool, Error<Self::Error>>;
+    async fn delete(&self, application: &str, name: &str) -> Result<bool, Error<Self::Error>> {
+        self.delete_with(application, name, Default::default())
+            .await
+    }
+
+    /// Delete a thing. Return `true` if the thing was deleted, `false` if it didn't exist.
+    async fn delete_with(
+        &self,
+        application: &str,
+        name: &str,
+        opts: Preconditions<'_>,
+    ) -> Result<bool, Error<Self::Error>>;
 }
