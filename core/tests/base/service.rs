@@ -53,9 +53,9 @@ async fn delete() {
 
     assert_eq!(notifier.drain().await, vec![thing]);
 
-    let found = service.delete(&id).await.unwrap();
+    let found = service.delete(&id, None).await.unwrap();
     assert_eq!(found, true);
-    let found = service.delete(&id).await.unwrap();
+    let found = service.delete(&id, None).await.unwrap();
     assert_eq!(found, false);
 }
 
@@ -97,7 +97,7 @@ async fn update() {
         ..thing.clone()
     };
 
-    let thing_1 = service.update(&id, thing_1, &OPTS).await.unwrap();
+    let thing_1 = service.update(&id, &thing_1, &OPTS).await.unwrap();
 
     assert_eq!(notifier.drain().await, vec![thing_1.clone()]);
 
@@ -167,7 +167,7 @@ async fn update_no_change() {
 
     assert_eq!(notifier.drain().await, vec![thing.clone()]);
 
-    let thing_1 = service.update(&id, thing.clone(), &OPTS).await.unwrap();
+    let thing_1 = service.update(&id, &thing, &OPTS).await.unwrap();
 
     assert_eq!(notifier.drain().await, vec![]);
 

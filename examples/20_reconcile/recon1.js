@@ -1,13 +1,13 @@
 
 function updateLabel(key, value) {
     if (value !== undefined) {
-        if (newState.metadata.labels === undefined) {
-            newState.metadata.labels = {};
+        if (context.newState.metadata.labels === undefined) {
+            context.newState.metadata.labels = {};
         }
-        newState.metadata.labels[key] = value;
+        context.newState.metadata.labels[key] = value;
     } else {
-        if (newState.metadata.labels !== undefined) {
-            delete newState.metadata.labels[key];
+        if (context.newState.metadata.labels !== undefined) {
+            delete context.newState.metadata.labels[key];
         }
     }
 }
@@ -17,5 +17,5 @@ function flagLabel(key, state) {
 }
 
 // check over temp
-flagLabel("overTemp", newState?.reportedState?.temperature?.value > 60);
-flagLabel("highTemp", newState?.reportedState?.temperature?.value > 50);
+flagLabel("overTemp", context.newState?.reportedState?.temperature?.value > 60);
+flagLabel("highTemp", context.newState?.reportedState?.temperature?.value > 50);

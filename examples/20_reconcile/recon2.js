@@ -4,13 +4,13 @@ const PROPERTY = "temp";
 
 function updateLabel(key, value) {
     if (value !== undefined) {
-        if (newState.metadata.labels === undefined) {
-            newState.metadata.labels = {};
+        if (context.newState.metadata.labels === undefined) {
+            context.newState.metadata.labels = {};
         }
-        newState.metadata.labels[key] = value;
+        context.newState.metadata.labels[key] = value;
     } else {
-        if (newState.metadata.labels !== undefined) {
-            delete newState.metadata.labels[key];
+        if (context.newState.metadata.labels !== undefined) {
+            delete context.newState.metadata.labels[key];
         }
     }
 }
@@ -20,32 +20,32 @@ function flagLabel(key, state) {
 }
 
 // check over temp
-flagLabel("highTemp", newState?.reportedState?.[PROPERTY]?.value > WARNING_THRESHOLD);
-flagLabel("overTemp", newState?.reportedState?.[PROPERTY]?.value > ALARM_THRESHOLD);
+flagLabel("highTemp", context.newState?.reportedState?.[PROPERTY]?.value > WARNING_THRESHOLD);
+flagLabel("overTemp", context.newState?.reportedState?.[PROPERTY]?.value > ALARM_THRESHOLD);
 
 function log(text) {
-    //logs.push(text)
+    //context.logs.push(text)
 }
 
 //log(`Before: ${JSON.stringify(newState, null, 2)}`);
 
 function changed(property) {
-    let currentValue = currentState?.reportedState?.[property]?.value;
-    let newValue = newState?.reportedState?.[property]?.value;
+    let currentValue = context.currentState?.reportedState?.[property]?.value;
+    let newValue = context.newState?.reportedState?.[property]?.value;
 
     return currentValue !== newValue;
 }
 
 function changedAnd(property, predicate) {
-    let currentValue = currentState?.reportedState?.[property]?.value;
-    let newValue = newState?.reportedState?.[property]?.value;
+    let currentValue = context.currentState?.reportedState?.[property]?.value;
+    let newValue = context.newState?.reportedState?.[property]?.value;
 
     return (currentValue !== newValue) && predicate(newValue);
 }
 
 function whenChanged(property, callback, or) {
-    let currentValue = currentState?.reportedState?.[property]?.value;
-    let newValue = newState?.reportedState?.[property]?.value;
+    let currentValue = context.currentState?.reportedState?.[property]?.value;
+    let newValue = context.newState?.reportedState?.[property]?.value;
 
     let orResult = false;
     if (or !== undefined) {
@@ -59,7 +59,7 @@ function whenChanged(property, callback, or) {
 
 function whenConditionChanged(condition, property, mapper, callback) {
     const conditionAnnotation = "condition/" + condition;
-    const hasAnnotation = newState.metadata.annotations?.[conditionAnnotation] !== undefined;
+    const hasAnnotation = context.newState.metadata.annotations?.[conditionAnnotation] !== undefined;
 
     log(`Has annotation: ${hasAnnotation}`);
 
@@ -86,7 +86,7 @@ function whenConditionChanged(condition, property, mapper, callback) {
 // Should be a system function
 function sendMessage(thing, message) {
     log(`Schedule message - Thing: ${thing}, Message: ${JSON.stringify(message, null, 2)}`);
-    outbox.push({thing, message});
+    context.outbox.push({thing, message});
 }
 
 function sendMerge(thing, merge) {
@@ -98,7 +98,7 @@ function sendPatch(thing, patch) {
 }
 
 function addReference(thing) {
-    const me = newState.metadata.name;
+    const me = context.newState.metadata.name;
     const lastUpdate = new Date().toISOString();
     sendMerge(thing, {
         reportedState: {
@@ -113,7 +113,7 @@ function addReference(thing) {
 }
 
 function removeReference(thing) {
-    const me = newState.metadata.name;
+    const me = context.newState.metadata.name;
     const lastUpdate = new Date().toISOString();
     sendMerge(thing, {
         reportedState: {

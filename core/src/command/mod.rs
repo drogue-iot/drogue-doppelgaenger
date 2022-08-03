@@ -15,7 +15,7 @@ pub struct Command {
 
 #[async_trait]
 pub trait CommandSink: Sized + Send + Sync + 'static {
-    type Error: std::error::Error;
+    type Error: std::error::Error + Send + Sync;
     type Config: Clone + Debug + DeserializeOwned;
 
     fn from_config(spawner: &mut dyn Spawner, config: Self::Config) -> anyhow::Result<Self>;

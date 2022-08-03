@@ -8,11 +8,12 @@ pub use updater::*;
 
 use crate::app::Spawner;
 use crate::command::CommandSink;
-use crate::machine::{Machine, OutboxMessage, Outcome};
+use crate::machine::{DeletionOutcome, Machine, OutboxMessage, Outcome};
 use crate::model::{Thing, WakerExt, WakerReason};
 use crate::notifier::Notifier;
 use crate::processor::{sink::Sink, Event};
 use crate::storage::{self, Storage};
+use crate::Preconditions;
 use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
@@ -154,32 +155,117 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
             .map_err(Error::Storage)
     }
 
-    pub async fn delete(&self, id: &Id) -> Result<bool, Error<St, No, Cmd>> {
-        self.storage
-            .delete(&id.application, &id.thing)
+    pub async fn delete(
+        &self,
+        id: &Id,
+        opts: Option<&Preconditions<'_>>,
+    ) -> Result<bool, Error<St, No, Cmd>> {
+        // get the current thing
+
+        log::debug!("Deleting thing: {id}");
+
+        let mut thing = match self.storage.get(&id.application, &id.thing).await {
+            Ok(Some(thing)) => thing,
+            // not found, we are done here
+            Err(storage::Error::NotFound) | Ok(None) => return Ok(false),
+            Err(err) => return Err(Error::Storage(err)),
+        };
+
+        if let Some(opts) = opts {
+            if !opts.matches(&thing) {
+                return Err(Error::Storage(storage::Error::PreconditionFailed));
+            }
+        }
+
+        if thing.metadata.deletion_timestamp.is_some() {
+            // already marked as deleted
+            return Ok(false);
+        }
+
+        let original_empty = thing
+            .internal
+            .as_ref()
+            .map(|internal| internal.outbox.is_empty())
+            .unwrap_or(true);
+
+        // mark deleted
+        thing.metadata.deletion_timestamp = Some(Utc::now());
+
+        // run machine for deletion
+        let DeletionOutcome { mut thing, outbox } = Machine::delete(thing).await?;
+        // add outbox
+        Self::add_outbox(&mut thing, outbox);
+        // check if the thing's outbox contains events
+        if !thing.outbox().is_empty() {
+            // if so, store, which also stores the deletion marker
+            thing = self.storage.update(thing).await.map_err(Error::Storage)?;
+            // from here on, we are marked deleted and need to re-process if we fail with the next step
+            if original_empty {
+                // it was originally empty, so we can send and ack, otherwise the waker will
+                // trigger (and delete) us later
+                thing = self.send_and_ack(thing).await?;
+            }
+        }
+
+        if thing.outbox().is_empty() {
+            // if the outbox is empty, delete
+            self.storage
+                .delete_with(
+                    &id.application,
+                    &id.thing,
+                    Preconditions {
+                        resource_version: thing.metadata.resource_version.as_deref(),
+                        uid: thing.metadata.uid.as_deref(),
+                    },
+                )
+                .await
+                .or_else(|err| match err {
+                    // if we didn't find what we want to delete, this is just fine
+                    storage::Error::NotFound => Ok(false),
+                    err => Err(Error::Storage(err)),
+                })?;
+        }
+
+        // notify
+        self.notifier
+            .notify(&thing)
             .await
-            .or_else(|err| match err {
-                // if we didn't find what we want to delete, this is just fine
-                storage::Error::NotFound => Ok(false),
-                err => Err(Error::Storage(err)),
-            })
+            .map_err(Error::Notifier)?;
+
+        // done
+        Ok(true)
     }
 
     pub async fn update<U>(
         &self,
         id: &Id,
-        updater: U,
+        updater: &U,
         opts: &UpdateOptions,
     ) -> Result<Thing, Error<St, No, Cmd>>
     where
         U: Updater,
     {
+        log::debug!("Updating thing: {id}");
+
         let current_thing = self
             .storage
             .get(&id.application, &id.thing)
             .await
             .and_then(|r| r.ok_or(storage::Error::NotFound))
             .map_err(Error::Storage)?;
+
+        if current_thing.metadata.deletion_timestamp.is_some() {
+            // if we are already deleted, we don't do any more updates. Except processing
+            // outgoing events.
+
+            // check for unprocessed events
+            self.check_unprocessed_events(current_thing, false).await?;
+
+            // returned with "ok", so all events have been processed, we can now delete
+
+            // now return with "not found"
+            return Err(Error::Storage(storage::Error::NotFound));
+        }
 
         // check for unprocessed events
         let current_thing = self
@@ -216,7 +302,11 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
             .map_err(Error::Storage)?;
 
         // waker is scheduled by add_outbox before storing
-        let current_outbox = current_thing.internal.map(|i| i.outbox.len()).unwrap_or(0);
+        let current_outbox = current_thing
+            .internal
+            .as_ref()
+            .map(|i| i.outbox.len())
+            .unwrap_or(0);
 
         log::debug!("Current outbox size: {}", current_outbox);
 
@@ -302,7 +392,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
             return Ok(new_thing);
         }
 
-        let outbox = outbox.iter().cloned().collect::<Vec<_>>();
+        let outbox = outbox.to_vec();
 
         match self.sink.publish_iter(outbox).await {
             Ok(()) => {

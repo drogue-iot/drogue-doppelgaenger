@@ -14,7 +14,7 @@ pub enum Error<E> {
 #[async_trait]
 pub trait Notifier: Sized + Send + Sync + 'static {
     type Config: Clone + Debug + Send + Sync + serde::de::DeserializeOwned + 'static;
-    type Error: std::error::Error + Debug;
+    type Error: std::error::Error + Debug + Send + Sync;
 
     fn from_config(config: &Self::Config) -> anyhow::Result<Self>;
 

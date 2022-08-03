@@ -25,7 +25,7 @@ impl<'t> TestRunner<'t> {
             .service
             .update(
                 self.source,
-                ReportStateBuilder::partial().state("foo", "bar"),
+                &ReportStateBuilder::partial().state("foo", "bar"),
                 self.opts,
             )
             .await;

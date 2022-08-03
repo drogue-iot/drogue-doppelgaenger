@@ -6,6 +6,7 @@ use crate::{
         SyntheticFeature, Thing,
     },
     storage::{self},
+    Preconditions,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -28,6 +29,7 @@ pub struct Config {
 pub struct ThingEntity {
     pub uid: Uuid,
     pub creation_timestamp: DateTime<Utc>,
+    pub deletion_timestamp: Option<DateTime<Utc>>,
     pub generation: u32,
     pub resource_version: Uuid,
 
@@ -79,6 +81,7 @@ impl TryFrom<Row> for ThingEntity {
         Ok(Self {
             uid: row.try_get("UID")?,
             creation_timestamp: row.try_get("CREATION_TIMESTAMP")?,
+            deletion_timestamp: row.try_get("DELETION_TIMESTAMP")?,
 
             generation: row.try_get::<_, i64>("GENERATION")? as u32,
             resource_version: row.try_get("RESOURCE_VERSION")?,
@@ -145,6 +148,7 @@ impl super::Storage for Storage {
 SELECT
     UID,
     CREATION_TIMESTAMP,
+    DELETION_TIMESTAMP,
     GENERATION,
     RESOURCE_VERSION,
     ANNOTATIONS,
@@ -179,6 +183,7 @@ WHERE
                         application: application.to_string(),
                         uid: Some(entity.uid.to_string()),
                         creation_timestamp: Some(entity.creation_timestamp),
+                        deletion_timestamp: entity.deletion_timestamp,
                         resource_version: Some(entity.resource_version.to_string()),
 
                         generation: Some(entity.generation),
@@ -322,7 +327,7 @@ WHERE
         let annotations = Json(&thing.metadata.annotations);
         let labels = Json(&thing.metadata.labels);
 
-        let mut types: Vec<Type> = Vec::new();
+        let mut types = Vec::new();
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
         types.push(Type::VARCHAR);
         params.push(name);
@@ -385,7 +390,12 @@ RETURNING
         }
     }
 
-    async fn delete(&self, application: &str, name: &str) -> Result<bool> {
+    async fn delete_with(
+        &self,
+        application: &str,
+        name: &str,
+        opts: Preconditions<'_>,
+    ) -> Result<bool> {
         if let Err(storage::Error::NotFound) =
             self.ensure_app(application, || storage::Error::NotFound)
         {
@@ -396,29 +406,42 @@ RETURNING
 
         log::debug!("Deleting thing: {application} / {name}");
 
-        let stmt = con
-            .prepare_typed_cached(
-                r#"
+        let mut types = vec![
+            Type::VARCHAR, // name
+            Type::VARCHAR, // application
+        ];
+
+        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
+        params.push(&name);
+        params.push(&application);
+
+        let mut stmt = r#"
 DELETE FROM things
 WHERE
         NAME = $1
     AND
         APPLICATION = $2
-"#,
-                &[
-                    Type::VARCHAR, // name
-                    Type::VARCHAR, // application
-                ],
-            )
+"#
+        .to_string();
+
+        if let Some(resource_version) = opts.resource_version.as_ref() {
+            types.push(Type::VARCHAR);
+            params.push(resource_version);
+            stmt.push_str(&format!("AND RESOURCE_VERSION::text=${}", types.len()));
+        }
+
+        if let Some(uid) = opts.uid.as_ref() {
+            types.push(Type::VARCHAR);
+            params.push(uid);
+            stmt.push_str(&format!("AND UID::text=${}", types.len()));
+        }
+
+        let stmt = con
+            .prepare_typed_cached(&stmt, &types)
             .await
             .map_err(Error::Postgres)?;
 
-        // FIXME: add uid and resource version
-
-        let rows = con
-            .execute(&stmt, &[&name, &application])
-            .await
-            .map_err(Error::Postgres)?;
+        let rows = con.execute(&stmt, &params).await.map_err(Error::Postgres)?;
 
         Ok(rows > 0)
     }

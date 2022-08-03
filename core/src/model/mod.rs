@@ -1,13 +1,16 @@
 mod desired;
+mod recon;
+mod waker;
 
 pub use desired::*;
+pub use recon::*;
+pub use waker::*;
 
 use crate::processor::Event;
 use crate::service::Id;
 use base64::STANDARD;
 use base64_serde::base64_serde_type;
 use chrono::{DateTime, Duration, Utc};
-use indexmap::IndexMap;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -42,6 +45,7 @@ impl Thing {
                 application: application.into(),
                 uid: None,
                 creation_timestamp: None,
+                deletion_timestamp: None,
                 generation: None,
                 resource_version: None,
                 annotations: Default::default(),
@@ -86,6 +90,14 @@ impl Thing {
                 }
             }
         }
+    }
+
+    pub fn outbox(&self) -> &[Event] {
+        const EMPTY: [Event; 0] = [];
+        self.internal
+            .as_ref()
+            .map(|internal| internal.outbox.as_slice())
+            .unwrap_or(&EMPTY)
     }
 }
 
@@ -161,6 +173,8 @@ pub struct Metadata {
     pub uid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub creation_timestamp: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletion_timestamp: Option<DateTime<Utc>>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generation: Option<u32>,
@@ -188,94 +202,6 @@ pub enum Schema {
 #[serde(tag = "version", content = "schema")]
 pub enum JsonSchema {
     Draft7(Value),
-}
-
-#[derive(
-    Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "camelCase")]
-pub struct Reconciliation {
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub changed: IndexMap<String, Changed>,
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub timers: IndexMap<String, Timer>,
-}
-
-impl Reconciliation {
-    pub fn is_empty(&self) -> bool {
-        self.changed.is_empty() && self.timers.is_empty()
-    }
-}
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "camelCase")]
-pub struct Changed {
-    #[serde(flatten)]
-    pub code: Code,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub last_log: Vec<String>,
-}
-
-impl From<Code> for Changed {
-    fn from(code: Code) -> Self {
-        Self {
-            code,
-            last_log: Default::default(),
-        }
-    }
-}
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "camelCase")]
-pub struct Timer {
-    /// the code to run
-    #[serde(flatten)]
-    pub code: Code,
-    /// the period the timer is scheduled
-    #[serde(with = "humantime_serde")]
-    #[schemars(schema_with = "crate::schemars::humantime")]
-    pub period: std::time::Duration,
-    /// A flag to stop the timer
-    #[serde(default)]
-    pub stopped: bool,
-    /// the latest timestamp the timer was started
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_started: Option<DateTime<Utc>>,
-    /// the timestamp the timer last ran
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_run: Option<DateTime<Utc>>,
-    /// the logs of the last run
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub last_log: Vec<String>,
-
-    /// an optional, initial delay. if there is none, the time will be run the first time it is
-    /// configured
-    #[serde(with = "humantime_serde")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "crate::schemars::humantime")]
-    pub initial_delay: Option<std::time::Duration>,
-}
-
-impl Timer {
-    pub fn new(
-        period: std::time::Duration,
-        initial_delay: Option<std::time::Duration>,
-        code: Code,
-    ) -> Self {
-        Self {
-            code,
-            last_log: Default::default(),
-            period,
-            last_started: None,
-            last_run: None,
-            stopped: false,
-            initial_delay,
-        }
-    }
 }
 
 #[derive(
@@ -352,90 +278,6 @@ impl Internal {
     pub fn is_empty(&self) -> bool {
         self.waker.is_empty() & self.outbox.is_empty()
     }
-}
-
-pub trait WakerExt {
-    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason);
-
-    fn wakeup(&mut self, delay: Duration, reason: WakerReason) {
-        self.wakeup_at(Utc::now() + delay, reason);
-    }
-
-    fn clear_wakeup(&mut self, reason: WakerReason);
-}
-
-impl WakerExt for Thing {
-    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
-        match &mut self.internal {
-            Some(internal) => {
-                internal.wakeup_at(when, reason);
-            }
-            None => {
-                let mut internal = Internal::default();
-                internal.wakeup_at(when, reason);
-                self.internal = Some(internal);
-            }
-        }
-    }
-
-    fn clear_wakeup(&mut self, reason: WakerReason) {
-        if let Some(internal) = &mut self.internal {
-            internal.clear_wakeup(reason);
-        }
-    }
-}
-
-impl WakerExt for Internal {
-    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
-        self.waker.wakeup_at(when, reason);
-    }
-
-    fn clear_wakeup(&mut self, reason: WakerReason) {
-        self.waker.clear_wakeup(reason);
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Waker {
-    pub when: Option<DateTime<Utc>>,
-    pub why: BTreeSet<WakerReason>,
-}
-
-impl Waker {
-    pub fn is_empty(&self) -> bool {
-        self.when.is_none()
-    }
-}
-
-impl WakerExt for Waker {
-    fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
-        self.why.insert(reason);
-        match self.when {
-            None => self.when = Some(when),
-            Some(w) => {
-                if w > when {
-                    self.when = Some(when);
-                }
-            }
-        }
-    }
-
-    fn clear_wakeup(&mut self, reason: WakerReason) {
-        self.why.remove(&reason);
-        if self.why.is_empty() {
-            self.when = None;
-        }
-    }
-}
-
-#[derive(
-    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
-#[serde(rename_all = "camelCase")]
-pub enum WakerReason {
-    Reconcile,
-    Outbox,
 }
 
 #[cfg(test)]
