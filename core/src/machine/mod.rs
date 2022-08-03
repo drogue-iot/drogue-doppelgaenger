@@ -2,7 +2,7 @@ mod deno;
 mod desired;
 mod recon;
 
-use crate::machine::recon::Reconciler;
+use crate::machine::recon::{Reconciler, ScriptAction};
 use crate::{
     command::Command,
     machine::deno::{DenoOptions, Json},
@@ -164,6 +164,7 @@ impl Machine {
                     struct Input {
                         current_state: Arc<Thing>,
                         new_state: Arc<Thing>,
+                        action: ScriptAction,
 
                         outbox: Vec<OutboxMessage>,
                         logs: Vec<String>,
@@ -185,6 +186,7 @@ impl Machine {
                     .run::<_, Json<Output>, ()>(Input {
                         current_state: thing.clone(),
                         new_state: thing.clone(),
+                        action: ScriptAction::Deleting,
                         outbox: vec![],
                         logs: vec![],
                     })

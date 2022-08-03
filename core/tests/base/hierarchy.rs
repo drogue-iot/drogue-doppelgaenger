@@ -4,6 +4,7 @@ use drogue_doppelgaenger_core::{
     processor::{Event, Message},
     service::{AnnotationsUpdater, Id, UpdateOptions},
 };
+use serde_json::json;
 use std::time::Duration;
 
 #[tokio::test]
@@ -17,20 +18,12 @@ async fn test_hierarchy() -> anyhow::Result<()> {
     } = setup().run(true);
 
     let common = r#"
-function log(text) {
-    context.logs.push(text)
-}
-
 if (context.newState.metadata.annotations === undefined) {
     context.newState.metadata.annotations = {};
 }
 
 if (context.newState.reportedState === undefined) {
     context.newState.reportedState = {};
-}
-
-function sendMessage(thing, message) {
-    context.outbox.push({thing, message});
 }
 
 function $ref() {
@@ -86,7 +79,7 @@ function registerChannel(reg, device, channel) {
             registerChild(true, device, $ref())
         }
         
-        context.newState.reportedState["parent"] = {lastUpdate: new Date().toISOString(), value: {$ref: device}};
+        context.newState.reportedState["$parent"] = {lastUpdate: new Date().toISOString(), value: device};
     } else {
         registerChild(false, device, $ref())
     }
@@ -99,15 +92,15 @@ function registerDevice(reg, device) {
 
     if (group !== undefined) {
         group = group.join('/');
-        const parent = "/" + group;
+        const parentStr = "/" + group;
         if (reg) {
             context.newState.metadata.annotations["io.drogue/device"] = device;
             if (context.currentState.metadata.annotations?.["io.drogue/group"] !== group) {
-                registerChild(true, parent, $ref());
+                registerChild(true, parentStr, $ref());
             }
-            context.newState.reportedState["parent"] = {lastUpdate: new Date().toISOString(), value: {$ref: parent}};
+            context.newState.reportedState["$parent"] = {lastUpdate: new Date().toISOString(), value: parentStr};
         } else {
-            registerChild(false, parent, $ref());
+            registerChild(false, parentStr, $ref());
         }
     }
 }
@@ -120,15 +113,16 @@ function registerGroup(reg, group) {
     const parent = parentGroup(group);
 
     if (parent !== undefined) {
+        const parentStr = "/" + parent.join('/');
         if (reg) {
             if (context.newState.metadata.annotations["io.drogue/group"] !== groupValue) {
                 context.newState.metadata.annotations["io.drogue/group"] = groupValue;
                 
-                registerChild(true, "/" + parent.join('/'), $ref())
+                registerChild(true, parentStr, $ref())
             }
-            context.newState.reportedState["parent"] = {lastUpdate: new Date().toISOString(), value: {$ref: parent}};
+            context.newState.reportedState["$parent"] = {lastUpdate: new Date().toISOString(), value: parentStr};
         } else {
-            registerChild(false, "/" + parent.join('/'), $ref())
+            registerChild(false, parentStr, $ref())
         }
     }
 }
@@ -149,6 +143,17 @@ function register(reg) {
         }
     }
 }
+
+switch (context.action) {
+    case "changed": {
+        register(true);
+        break;
+    }
+    case "deleting": {
+        register(false);
+        break;
+    }
+}
 "#;
 
     // expect a group of [foo, bar, baz], a thing named "device" and a thing named "device/channel"
@@ -157,25 +162,12 @@ function register(reg) {
     thing.reconciliation.deleting.insert(
         "hierarchy".to_string(),
         Deleting {
-            code: Code::JavaScript(format!(
-                r#"
-{common}
-
-register(false);
-"#
-            )),
+            code: Code::JavaScript(common.to_string()),
         },
     );
     thing.reconciliation.changed.insert(
         "hierarchy".to_string(),
-        Code::JavaScript(format!(
-            r#"
-{common}
-
-register(true);
-"#
-        ))
-        .into(),
+        Code::JavaScript(common.to_string()).into(),
     );
     let thing = service.create(thing).await.unwrap();
 
@@ -215,21 +207,43 @@ register(true);
         .get(&Id::new("default", "/foo/bar/baz"))
         .await?
         .expect("Group level 3 thing");
+    assert_eq!(
+        group_l_3.metadata.annotations["io.drogue/group"],
+        "foo/bar/baz"
+    );
+    assert_eq!(
+        group_l_3.reported_state["$parent"].value,
+        json!({"$ref": "/foo/bar"})
+    );
+
     let group_l_2 = service
         .get(&Id::new("default", "/foo/bar"))
         .await
         .unwrap()
         .expect("Group level 2 thing");
+    assert_eq!(group_l_2.metadata.annotations["io.drogue/group"], "foo/bar");
+    assert_eq!(
+        group_l_2.reported_state["$parent"].value,
+        json!({"$ref": "/foo"})
+    );
+
     let group_l_1 = service
         .get(&Id::new("default", "/foo"))
         .await
         .unwrap()
         .expect("Group level 1 thing");
+    assert_eq!(group_l_1.metadata.annotations["io.drogue/group"], "foo");
+    assert_eq!(
+        group_l_1.reported_state["$parent"].value,
+        json!({"$ref": "/"})
+    );
+
     let root = service
         .get(&Id::new("default", "/"))
         .await
         .unwrap()
         .expect("Root level thing");
+    assert!(root.reported_state.get("$parent").is_none());
 
     // do some update, so ensure e.g. reported state updates don't cause any further events
     runner

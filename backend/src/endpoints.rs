@@ -13,9 +13,9 @@ use drogue_doppelgaenger_core::{
     notifier::Notifier,
     processor::{sink::Sink, SetDesiredValue},
     service::{
-        DesiredStateUpdate, DesiredStateUpdater, DesiredStateValueUpdater, Id, JsonMergeUpdater,
-        JsonPatchUpdater, Patch, ReportedStateUpdater, Service, SyntheticStateUpdater, UpdateMode,
-        UpdateOptions,
+        AnnotationsUpdater, DesiredStateUpdate, DesiredStateUpdater, DesiredStateValueUpdater, Id,
+        JsonMergeUpdater, JsonPatchUpdater, Patch, ReportedStateUpdater, Service,
+        SyntheticStateUpdater, UpdateMode, UpdateOptions,
     },
     storage::Storage,
 };
@@ -30,9 +30,10 @@ pub async fn things_get<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     service: web::Data<Service<S, N, Si, Cmd>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let result = service.get(&path.into_inner()).await?;
-
-    Ok(HttpResponse::Ok().json(result))
+    Ok(match service.get(&path.into_inner()).await? {
+        Some(thing) => HttpResponse::Ok().json(thing),
+        None => HttpResponse::NotFound().finish(),
+    })
 }
 
 pub async fn things_create<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
@@ -192,6 +193,20 @@ pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink, Cmd
     let payload = payload.into_inner();
 
     service.update(&path.into_inner(), &payload, &OPTS).await?;
+
+    Ok(HttpResponse::NoContent().json(json!({})))
+}
+
+pub async fn things_update_annotations<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<Service<S, N, Si, Cmd>>,
+    path: web::Path<Id>,
+    payload: web::Json<BTreeMap<String, Option<String>>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let payload = payload.into_inner();
+
+    service
+        .update(&path.into_inner(), &AnnotationsUpdater(payload), &OPTS)
+        .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }

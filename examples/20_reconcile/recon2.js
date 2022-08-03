@@ -23,10 +23,6 @@ function flagLabel(key, state) {
 flagLabel("highTemp", context.newState?.reportedState?.[PROPERTY]?.value > WARNING_THRESHOLD);
 flagLabel("overTemp", context.newState?.reportedState?.[PROPERTY]?.value > ALARM_THRESHOLD);
 
-function log(text) {
-    //context.logs.push(text)
-}
-
 //log(`Before: ${JSON.stringify(newState, null, 2)}`);
 
 function changed(property) {
@@ -81,12 +77,6 @@ function whenConditionChanged(condition, property, mapper, callback) {
         }
 
     }, () => { return !hasAnnotation; } )
-}
-
-// Should be a system function
-function sendMessage(thing, message) {
-    log(`Schedule message - Thing: ${thing}, Message: ${JSON.stringify(message, null, 2)}`);
-    context.outbox.push({thing, message});
 }
 
 function sendMerge(thing, merge) {

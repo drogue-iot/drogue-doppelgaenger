@@ -1,4 +1,5 @@
 use super::deno;
+use crate::machine::recon::ScriptAction;
 use crate::model::CommandMode;
 use crate::{
     command,
@@ -120,10 +121,11 @@ impl DesiredReconciler for Code {
     ) -> Result<(), Self::Error> {
         match self {
             Code::JavaScript(code) => {
-                #[derive(Clone, Default, serde::Serialize)]
+                #[derive(Clone, serde::Serialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct Input {
                     value: Value,
+                    action: ScriptAction,
                     #[serde(skip_serializing_if = "Option::is_none")]
                     last_attempt: Option<DateTime<Utc>>,
                 }
@@ -147,6 +149,7 @@ impl DesiredReconciler for Code {
                 let input = Input {
                     value: feature.value,
                     last_attempt: *feature.last_attempt,
+                    action: ScriptAction::DesiredReconciliation,
                 };
 
                 let exec = Execution::new(

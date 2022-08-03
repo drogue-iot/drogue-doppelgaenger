@@ -16,6 +16,16 @@ use indexmap::IndexMap;
 use serde_json::Value;
 use std::sync::Arc;
 
+#[derive(Clone, Debug, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScriptAction {
+    Changed,
+    Timer,
+    Deleting,
+    Synthetic,
+    DesiredReconciliation,
+}
+
 pub struct Reconciler {
     deadline: tokio::time::Instant,
     current_thing: Arc<Thing>,
@@ -320,7 +330,11 @@ impl Reconciler {
     async fn reconcile_changed(&mut self, changed: IndexMap<String, Changed>) -> Result<(), Error> {
         for (name, mut changed) in changed {
             let ExecutionResult { logs } = self
-                .run_code(format!("changed-{}", name), &changed.code)
+                .run_code(
+                    format!("changed-{}", name),
+                    ScriptAction::Changed,
+                    &changed.code,
+                )
                 .await?;
 
             changed.last_log = logs;
@@ -383,7 +397,7 @@ impl Reconciler {
 
                     let now = Utc::now();
 
-                    self.run_code(format!("timer-{}", name), &timer.code)
+                    self.run_code(format!("timer-{}", name), ScriptAction::Timer, &timer.code)
                         .await?;
 
                     let next_run =
@@ -407,7 +421,12 @@ impl Reconciler {
         Ok(())
     }
 
-    async fn run_code(&mut self, name: String, code: &Code) -> Result<ExecutionResult, Error> {
+    async fn run_code(
+        &mut self,
+        name: String,
+        action: ScriptAction,
+        code: &Code,
+    ) -> Result<ExecutionResult, Error> {
         match code {
             Code::JavaScript(script) => {
                 #[derive(serde::Serialize)]
@@ -415,6 +434,7 @@ impl Reconciler {
                 struct Input {
                     current_state: Arc<Thing>,
                     new_state: Thing,
+                    action: ScriptAction,
                     // the following items are scooped off by the output, but we need to initialize
                     // them to present, but empty values for the scripts.
                     outbox: Vec<Value>,
@@ -442,6 +462,7 @@ impl Reconciler {
                     .run::<_, Json<Output>, ()>(Input {
                         current_state: self.current_thing.clone(),
                         new_state: self.new_thing.clone(),
+                        action,
                         outbox: vec![],
                         logs: vec![],
                     })
@@ -486,12 +507,16 @@ impl Reconciler {
                 #[serde(rename_all = "camelCase")]
                 struct Input {
                     new_state: Arc<Thing>,
+                    action: ScriptAction,
                 }
 
                 let opts = DenoOptions { deadline };
                 let deno = deno::Execution::new(name, script, opts);
                 let out = deno
-                    .run::<_, (), Value>(Input { new_state })
+                    .run::<_, (), Value>(Input {
+                        new_state,
+                        action: ScriptAction::Synthetic,
+                    })
                     .await
                     .map_err(Error::Reconcile)?;
 

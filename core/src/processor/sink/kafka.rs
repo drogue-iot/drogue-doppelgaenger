@@ -55,7 +55,7 @@ impl super::Sink for Sink {
     }
 
     async fn publish(&self, event: Event) -> anyhow::Result<()> {
-        let key = format!("{}/{}", event.application, event.device);
+        let key = format!("{}/{}", event.application, event.thing);
 
         let payload = serde_json::to_vec(&event.message)?;
 
@@ -67,7 +67,7 @@ impl super::Sink for Sink {
             .add("ce_timestamp", &event.timestamp.to_rfc3339())
             .add("content-type", "application/json")
             .add("application", &event.application)
-            .add("device", &event.device);
+            .add("thing", &event.thing);
 
         let record = FutureRecord::to(&self.topic)
             .key(&key)

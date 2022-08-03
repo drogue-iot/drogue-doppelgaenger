@@ -40,22 +40,21 @@ pub struct Event {
     pub id: String,
     pub timestamp: DateTime<Utc>,
     pub application: String,
-    // FIXME: rename to thing
-    pub device: String,
+    pub thing: String,
     pub message: Message,
 }
 
 impl Event {
-    pub fn new<A: Into<String>, D: Into<String>, M: Into<Message>>(
+    pub fn new<A: Into<String>, T: Into<String>, M: Into<Message>>(
         application: A,
-        device: D,
+        thing: T,
         message: M,
     ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             application: application.into(),
-            device: device.into(),
+            thing: thing.into(),
             message: message.into(),
         }
     }
@@ -277,6 +276,10 @@ where
                             // retry
                             continue;
                         }
+                        Err(service::Error::Storage(storage::Error::NotFound)) => {
+                            // ok, we clean up anyway
+                            break;
+                        }
                         Err(err) => {
                             return Err(anyhow!(err));
                         }
@@ -376,6 +379,7 @@ where
                 }
                 Err(service::Error::Storage(storage::Error::NotFound)) => {
                     UPDATES.with_label_values(&["not-found"]).inc();
+                    log::info!("Thing not found: {id}");
                     // the thing does not exists, skip
                     break;
                 }
@@ -422,13 +426,10 @@ where
                     id: _,
                     timestamp: _,
                     application,
-                    device,
+                    thing,
                     message,
                 } = event;
-                let id = Id {
-                    application,
-                    thing: device,
-                };
+                let id = Id { application, thing };
 
                 match message {
                     Message::RegisterChild { r#ref, template } => {

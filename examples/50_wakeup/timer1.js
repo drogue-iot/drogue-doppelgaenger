@@ -1,10 +1,10 @@
-if (newState.metadata.annotations === undefined) {
-    newState.metadata.annotations = {};
+if (context.newState.metadata.annotations === undefined) {
+    context.newState.metadata.annotations = {};
 }
-if (newState.reportedState === undefined) {
-    newState.reportedState = {};
+if (context.newState.reportedState === undefined) {
+    context.newState.reportedState = {};
 }
 
 const lastUpdate = new Date().toISOString();
-const value = (newState.reportedState["timer"]?.value || 0) + 1;
-newState.reportedState["timer"] = { value, lastUpdate };
+const value = (context.newState.reportedState["timer"]?.value || 0) + 1;
+context.newState.reportedState["timer"] = { value, lastUpdate };

@@ -1,6 +1,6 @@
 use crate::{app::Spawner, command::Command, mqtt::MqttClient};
 use async_trait::async_trait;
-use rumqttc::{AsyncClient, ClientError, Event, EventLoop, Incoming, QoS};
+use rumqttc::{AsyncClient, ClientError, Event, EventLoop, Incoming, Outgoing, QoS};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
@@ -82,6 +82,9 @@ impl CommandSink {
                 }
                 Ok(Event::Incoming(Incoming::ConnAck(ack))) => {
                     log::info!("Connection opened: {ack:?}");
+                }
+                Ok(Event::Incoming(Incoming::PingResp) | Event::Outgoing(Outgoing::PingReq)) => {
+                    // ignore
                 }
                 Ok(event) => {
                     log::info!("Unexpected event: {event:?}");
