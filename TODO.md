@@ -6,6 +6,7 @@
 * [x] Re-process events: currently we only store them, but don't reprocess missed events
 * [x] Ensure that reported state "last updated" changes when only the value changes (move logic to machine)
 * [x] Allow unsetting a desired state, without deleting it
+* [ ] create kubernetes deployment
 
 ## Backlog
 

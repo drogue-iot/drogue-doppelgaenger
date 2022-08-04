@@ -31,24 +31,23 @@
 <body>
 
 <header>
-    <nav class="navbar navbar-expand-lg sticky-top navbar-light bg-light">
+    <nav class="navbar navbar-expand-lg fixed-top sticky-top navbar-light bg-light">
         <div class="container-fluid">
             <a class="navbar-brand">Drogue Doppelgänger — Thing Debugger</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent"
-                    aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarSupportedContent">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                </ul>
-                <span class="navbar-text" id="connection">
-                </span>
-            </div>
-            <form class="d-flex" role="search" id="form-lookup">
+            <form class="row row-cols-lg-auto g-3 align-items-center" role="search" id="form-lookup">
+                <div class="col-12">
+                    <div class="form-check form-switch form-check-inline">
+                        <input class="form-check-input" id="showDesiredCheck" role="switch" type="checkbox" aria-labelledby="showDesiredLabel">
+                        <label class="form-check-label" id="showDesiredLabel" for="showDesiredCheck">Show desired state</label>
+                    </div>
+                </div>
+                <div class="col-12">
                 <input class="form-control me-2" type="search" placeholder="Thing Name" aria-label="Thing Name"
                        id="lookup-thing-name" minlength="1">
-                <button class="btn btn-outline-primary" type="button" id="btn-lookup">Lookup</button>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-outline-primary" type="button" id="btn-lookup">Lookup</button>
+                </div>
             </form>
         </div>
     </nav>
@@ -88,8 +87,13 @@
     let selectedThing = null;
     let showDesired = false;
 
-    function toggleDesired(flag) {
-        showDesired = !showDesired;
+    $('#showDesiredCheck').change(function () {
+        console.log(this.checked);
+        setDesired(this.checked);
+    });
+
+    function setDesired(flag) {
+        showDesired = flag;
         if (selectedThing) {
             selectedThing.options.showDesired = showDesired;
             selectedThing.render();
@@ -113,7 +117,7 @@
 
         selectedThing = new ThingCard(new Thing(api, thing), card, {
             showTimestamps: true,
-            showDesired: showDesired,
+            showDesired,
             controlDesired: true,
             refClicked: (ref) => {
                 showThing(ref);
