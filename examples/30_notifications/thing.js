@@ -320,6 +320,9 @@ class ThingCard {
         }
         all.append(headers);
 
+        const parentTarget = $('[data-drogue-thing-parent]');
+        parentTarget.empty();
+
         for (const [key, value] of Object.entries(this.state?.mergedState || {}).sort()) {
             // console.debug("Key:", key, " Value:", value);
 
@@ -342,7 +345,13 @@ class ThingCard {
             }
 
             if (key === '$parent') {
-                keyExtras += ` ${renderReference(value.value, '<i class="bi bi-arrow-90deg-up"></i>')}`;
+                if (parentTarget) {
+                    parentTarget.html(` ${renderReference(value.value, '<i class="bi bi-arrow-90deg-up"></i>')}`);
+                    this.#bindOnClickRef(parentTarget);
+                    continue;
+                } else {
+                    keyExtras += ` ${renderReference(value.value, '<i class="bi bi-arrow-90deg-up"></i>')}`;
+                }
             }
 
             let row = $(`
@@ -351,11 +360,8 @@ class ThingCard {
     <div class="col pe-4 text-end text-truncate">${renderedValue} ${renderedType}</div>
     <div class="col text-muted text-end">${timestampString(lastUpdate, !this.options.showDesired)}</div>
 </li>`);
-            row.find('a[data-drogue-ref]').on('click', (event) => {
-                const ele = $(event.currentTarget);
-                const ref = ele.attr('data-drogue-ref');
-                this.options.refClicked(ref);
-            })
+
+            this.#bindOnClickRef(row);
 
             if (this.options.showDesired) {
                 if (value.desired !== undefined) {
@@ -610,10 +616,7 @@ class ThingCard {
                 content = $(`<ul class="drogue-ref-group">`);
                 for (const [ref, _] of Object.entries(value?.value)) {
                     const link = $(`<a class="drogue-thing-ref">${ref}</a>`);
-                    link.on("click", () => {
-                        console.debug("Clicked: ", ref);
-                        this.options.refClicked(ref);
-                    });
+                    this.#bindOnClickRef(link);
                     const item = $(`<li></li>`);
                     item.append(link);
                     content.append(item);
@@ -630,6 +633,15 @@ class ThingCard {
 
 
     }
+
+    #bindOnClickRef(target) {
+        target.find('a[data-drogue-ref]').on('click', (event) => {
+            const ele = $(event.currentTarget);
+            const ref = ele.attr('data-drogue-ref');
+            this.options.refClicked(ref);
+        })
+    }
+
 }
 
 /// Parse a JSON date into a date, handling undefined.
