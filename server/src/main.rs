@@ -1,13 +1,13 @@
 #[macro_use]
 extern crate diesel_migrations;
 
-use actix_web::{middleware::Logger, App, HttpServer};
+use actix_web::{App, HttpServer};
 use anyhow::anyhow;
-use drogue_doppelgaenger_core::command::mqtt;
+use drogue_bazaar::app::Startup;
+use drogue_bazaar::{core::SpawnerExt, runtime};
 use drogue_doppelgaenger_core::{
-    app::run_main,
     command,
-    config::{kafka::KafkaProperties, ConfigFromEnv},
+    config::kafka::KafkaProperties,
     injector, notifier,
     processor::{
         sink::{self, Sink},
@@ -25,6 +25,7 @@ use rdkafka::{
 };
 use std::time::Duration;
 use tokio::runtime::Handle;
+use tracing_actix_web::TracingLogger;
 
 embed_migrations!("../database-migration/migrations");
 
@@ -104,11 +105,10 @@ async fn create_topic(config: KafkaProperties, topic: String) -> anyhow::Result<
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenv::dotenv()?;
-    env_logger::builder().format_timestamp_millis().init();
+    runtime!(drogue_doppelgaenger_core::PROJECT).exec(run).await
+}
 
-    let server = Server::from_env()?;
-
+async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
     run_migrations(&server.db).await.unwrap();
     create_topic(
         KafkaProperties(server.notifier_sink.properties.clone()),
@@ -123,8 +123,6 @@ async fn main() -> anyhow::Result<()> {
     .await
     .unwrap();
 
-    let mut tasks = vec![];
-
     let service = service::Config {
         storage: postgres::Config {
             application: server.application.clone(),
@@ -138,20 +136,20 @@ async fn main() -> anyhow::Result<()> {
         postgres::Storage,
         notifier::kafka::Notifier,
         sink::kafka::Sink,
-        mqtt::CommandSink,
+        command::mqtt::CommandSink,
     > {
         application: server.application.clone(),
         service: service.clone(),
         listener: server.notifier_source,
     };
 
-    let configurator = drogue_doppelgaenger_backend::configure(&mut tasks, backend)?;
+    let configurator = drogue_doppelgaenger_backend::configure(startup, backend)?;
 
     // prepare the http server
 
     let http = HttpServer::new(move || {
         App::new()
-            .wrap(Logger::default())
+            .wrap(TracingLogger::default())
             .configure(|ctx| configurator(ctx))
     })
     .bind("[::]:8080")?
@@ -166,10 +164,10 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(injector) = server.injector.filter(|injector| !injector.disabled) {
         log::info!("Running injector: {injector:?}");
-        tasks.push(injector.run(sink).boxed_local());
+        startup.spawn(injector.run(sink).boxed_local());
     }
 
-    let service = Service::from_config(&mut tasks, service)?;
+    let service = Service::from_config(startup, service)?;
 
     let processor = Processor::new(service, source).run().boxed_local();
 
@@ -187,9 +185,7 @@ async fn main() -> anyhow::Result<()> {
     .run()
     .boxed_local();
 
-    tasks.extend([http, processor, waker]);
+    startup.spawn_iter([http, processor, waker]);
 
-    // run the main loop
-
-    run_main(tasks).await
+    Ok(())
 }

@@ -1,7 +1,7 @@
 pub mod mqtt;
 
-use crate::app::Spawner;
 use async_trait::async_trait;
+use drogue_bazaar::app::Startup;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
 
@@ -18,7 +18,7 @@ pub trait CommandSink: Sized + Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync;
     type Config: Clone + Debug + DeserializeOwned;
 
-    fn from_config(spawner: &mut dyn Spawner, config: Self::Config) -> anyhow::Result<Self>;
+    fn from_config(startup: &mut dyn Startup, config: Self::Config) -> anyhow::Result<Self>;
 
     async fn send_command(&self, command: Command) -> Result<(), Self::Error>;
 

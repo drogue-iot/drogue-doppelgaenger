@@ -17,6 +17,7 @@ chrono = { version = "0.4", features = ["serde"] }
 cloudevents-sdk = "0.5"
 config = "0.13"
 dotenv = "0.15"
+drogue-bazaar = "0.1"
 env_logger = "0.9"
 futures = "0.3"
 humantime = "2"

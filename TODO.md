@@ -7,6 +7,7 @@
 * [x] Ensure that reported state "last updated" changes when only the value changes (move logic to machine)
 * [x] Allow unsetting a desired state, without deleting it
 * [ ] create kubernetes deployment
+* [ ] create a common `drogue-stuff` repository, containing common code
 
 ## Backlog
 

@@ -240,7 +240,7 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct MockEvent {
     pub application: String,
-    pub device: String,
+    pub thing: String,
     pub message: Message,
 }
 
@@ -248,7 +248,7 @@ impl From<Event> for MockEvent {
     fn from(event: Event) -> Self {
         Self {
             application: event.application,
-            device: event.device,
+            thing: event.thing,
             message: event.message,
         }
     }
@@ -258,7 +258,7 @@ impl MockEvent {
     pub fn new(id: &Id, message: Message) -> MockEvent {
         Self {
             application: id.application.clone(),
-            device: id.thing.clone(),
+            thing: id.thing.clone(),
             message,
         }
     }

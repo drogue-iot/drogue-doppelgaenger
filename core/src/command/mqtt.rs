@@ -1,5 +1,6 @@
-use crate::{app::Spawner, command::Command, mqtt::MqttClient};
+use crate::{command::Command, mqtt::MqttClient};
 use async_trait::async_trait;
+use drogue_bazaar::app::{Startup, StartupExt};
 use rumqttc::{AsyncClient, ClientError, Event, EventLoop, Incoming, Outgoing, QoS};
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -51,13 +52,13 @@ impl super::CommandSink for CommandSink {
     type Error = ClientError;
     type Config = Config;
 
-    fn from_config(spawner: &mut dyn Spawner, config: Self::Config) -> anyhow::Result<Self> {
+    fn from_config(startup: &mut dyn Startup, config: Self::Config) -> anyhow::Result<Self> {
         let opts = config.client.try_into()?;
         let mode = config.mode;
 
         let (client, event_loop) = AsyncClient::new(opts, 10);
 
-        spawner.spawn(Box::pin(Self::runner(event_loop)));
+        startup.spawn(Self::runner(event_loop));
 
         Ok(Self { client, mode })
     }

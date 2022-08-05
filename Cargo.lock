@@ -44,10 +44,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "actix-cors"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "414360eed71ba2d5435b185ba43ecbe281dfab5df3898286d6b7be8074372c92"
+dependencies = [
+ "actix-utils",
+ "actix-web",
+ "derive_more",
+ "futures-util",
+ "log",
+ "once_cell",
+ "smallvec",
+]
+
+[[package]]
 name = "actix-http"
 version = "3.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f9ffb6db08c1c3a1f4aef540f1a63193adc73c4fbd40b75a95fc8c5258f6e51"
+source = "git+https://github.com/ctron/actix-web?rev=f3f41a0cc70e43564f8243b3ff425195566b5f16#f3f41a0cc70e43564f8243b3ff425195566b5f16"
 dependencies = [
  "actix-codec",
  "actix-rt",
@@ -156,8 +170,7 @@ dependencies = [
 [[package]]
 name = "actix-web"
 version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a27e8fe9ba4ae613c21f677c2cfaf0696c3744030c6f485b34634e502d6bb379"
+source = "git+https://github.com/ctron/actix-web?rev=f3f41a0cc70e43564f8243b3ff425195566b5f16#f3f41a0cc70e43564f8243b3ff425195566b5f16"
 dependencies = [
  "actix-codec",
  "actix-http",
@@ -220,6 +233,44 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "actix-web-extras"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1dfa234e9b71ed142e54b26b4cc9e13ef4ac563cf1a2be810b0c3d057781ea"
+dependencies = [
+ "actix-web",
+ "futures-core",
+ "futures-util",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "actix-web-opentelemetry"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "503ff1136a085f39fc9fd96818a5e9c7ab58ccd36682f3cfc32a001d01cc3a50"
+dependencies = [
+ "actix-http",
+ "actix-web",
+ "futures-util",
+ "opentelemetry",
+ "opentelemetry-semantic-conventions",
+ "serde",
+]
+
+[[package]]
+name = "actix-web-prom"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9df3127d20a5d01c9fc9aceb969a38d31a6767e1b48a54d55a8f56c769a84923"
+dependencies = [
+ "actix-web",
+ "futures-core",
+ "pin-project-lite",
+ "prometheus",
 ]
 
 [[package]]
@@ -474,15 +525,16 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chrono"
-version = "0.4.19"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
+checksum = "6127248204b9aba09a362f6c930ef6a78f2c1b2215f8a7b398c06e1083f17af0"
 dependencies = [
- "libc",
+ "js-sys",
  "num-integer",
  "num-traits",
  "serde",
  "time 0.1.44",
+ "wasm-bindgen",
  "winapi",
 ]
 
@@ -801,6 +853,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
+name = "drogue-bazaar"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-http",
+ "actix-service",
+ "actix-web",
+ "actix-web-extras",
+ "actix-web-opentelemetry",
+ "actix-web-prom",
+ "anyhow",
+ "async-trait",
+ "config",
+ "dotenv",
+ "env_logger",
+ "futures-core",
+ "futures-util",
+ "http",
+ "humantime",
+ "humantime-serde",
+ "log",
+ "opentelemetry",
+ "opentelemetry-jaeger",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "drogue-doppelgaenger-backend"
 version = "0.1.0"
 dependencies = [
@@ -809,6 +894,7 @@ dependencies = [
  "actix-web-actors",
  "anyhow",
  "chrono",
+ "drogue-bazaar",
  "drogue-doppelgaenger-core",
  "futures",
  "humantime",
@@ -820,6 +906,7 @@ dependencies = [
  "time 0.1.44",
  "tokio",
  "tokio-stream",
+ "tracing-actix-web",
 ]
 
 [[package]]
@@ -860,6 +947,7 @@ dependencies = [
  "deadpool-postgres",
  "deno_core",
  "dotenv",
+ "drogue-bazaar",
  "drogue-doppelgaenger-common",
  "env_logger",
  "futures",
@@ -901,6 +989,7 @@ name = "drogue-doppelgaenger-processor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "drogue-bazaar",
  "drogue-doppelgaenger-common",
  "drogue-doppelgaenger-core",
  "env_logger",
@@ -922,6 +1011,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "dotenv",
+ "drogue-bazaar",
  "drogue-doppelgaenger-backend",
  "drogue-doppelgaenger-core",
  "drogue-doppelgaenger-processor",
@@ -937,6 +1027,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-postgres",
+ "tracing-actix-web",
  "uuid 1.1.2",
 ]
 
@@ -3158,6 +3249,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-actix-web"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0b2cd6e5074ff67679a0ff68bc6333be78d29910ba7cd295d948aa5ff152032"
+dependencies = [
+ "actix-web",
+ "opentelemetry",
+ "pin-project",
+ "tracing",
+ "tracing-futures",
+ "tracing-opentelemetry",
+ "uuid 1.1.2",
+]
+
+[[package]]
 name = "tracing-attributes"
 version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3176,6 +3282,16 @@ checksum = "7b7358be39f2f274f322d2aaed611acc57f382e8eb1e5b48cb9ae30933495ce7"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-futures"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
+dependencies = [
+ "pin-project",
+ "tracing",
 ]
 
 [[package]]

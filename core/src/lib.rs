@@ -1,4 +1,3 @@
-pub mod app;
 pub mod command;
 pub mod config;
 pub mod error;
@@ -10,13 +9,14 @@ mod mqtt;
 pub mod notifier;
 pub mod processor;
 mod schemars;
-mod serde;
 pub mod service;
 pub mod storage;
-pub mod version;
 pub mod waker;
 
-pub use self::serde::is_default;
+pub use drogue_bazaar::core::default::is_default;
+
+drogue_bazaar::project!(PROJECT: "Drogue IoT Twin");
+
 use crate::model::Thing;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
