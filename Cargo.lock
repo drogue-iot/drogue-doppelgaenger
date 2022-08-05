@@ -855,6 +855,8 @@ checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 [[package]]
 name = "drogue-bazaar"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a0a27067e55f564e6b33a157a5f58678952e2bd159bc05a08e5fc764ab0a082"
 dependencies = [
  "actix-cors",
  "actix-http",
