@@ -1,9 +1,10 @@
 //! This needs restructuring
 
-use crate::app::Spawner;
 use crate::config::kafka::KafkaProperties;
 use crate::{model::Thing, notifier::kafka, service::Id};
 use anyhow::Context;
+use drogue_bazaar::app::Startup;
+use drogue_bazaar::core::SpawnerExt;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::BorrowedMessage;
 use rdkafka::Message as _;
@@ -71,7 +72,7 @@ fn find_id<'m>(msg: &'m BorrowedMessage) -> Option<&'m str> {
 }
 
 impl KafkaSource {
-    pub fn new(spawner: &mut dyn Spawner, config: kafka::Config) -> anyhow::Result<Self> {
+    pub fn new(startup: &mut dyn Startup, config: kafka::Config) -> anyhow::Result<Self> {
         log::info!("Starting Kafka event source: {config:?}");
 
         let topic = config.topic;
@@ -94,7 +95,7 @@ impl KafkaSource {
             inner: inner.clone(),
         };
 
-        spawner.spawn(Box::pin(async move { runner.run().await }));
+        startup.spawn(async move { runner.run().await });
 
         Ok(Self { inner })
     }

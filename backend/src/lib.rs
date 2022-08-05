@@ -4,8 +4,8 @@ mod utils;
 
 use actix_web::{guard, web, App, HttpServer};
 use anyhow::anyhow;
+use drogue_bazaar::app::{Startup, StartupExt};
 use drogue_doppelgaenger_core::{
-    app::{run_main, Spawner},
     command::{mqtt, CommandSink},
     listener::KafkaSource,
     notifier::{kafka, Notifier},
@@ -13,9 +13,10 @@ use drogue_doppelgaenger_core::{
     service::{self, Service},
     storage::{postgres, Storage},
 };
-use futures::{FutureExt, TryFutureExt};
+use futures::TryFutureExt;
+use tracing_actix_web::TracingLogger;
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct Config<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> {
     pub application: Option<String>,
     // serde(bound) required as S isn't serializable: https://github.com/serde-rs/serde/issues/1296
@@ -31,13 +32,13 @@ pub struct Instance {
 }
 
 pub fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    spawner: &mut dyn Spawner,
+    startup: &mut dyn Startup,
     config: Config<S, N, Si, Cmd>,
 ) -> anyhow::Result<impl Fn(&mut web::ServiceConfig) + Send + Sync + Clone> {
-    let service = Service::from_config(spawner, config.service)?;
+    let service = Service::from_config(startup, config.service)?;
     let service = web::Data::new(service);
 
-    let source = KafkaSource::new(spawner, config.listener)?;
+    let source = KafkaSource::new(startup, config.listener)?;
     let source = web::Data::new(source);
 
     let instance = web::Data::new(Instance {
@@ -117,17 +118,20 @@ pub fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
 
 pub async fn run(
     config: Config<postgres::Storage, kafka::Notifier, sink::kafka::Sink, mqtt::CommandSink>,
+    startup: &mut dyn Startup,
 ) -> anyhow::Result<()> {
-    let mut spawner = vec![];
-    let configurator = configure::<_, _, _, _>(&mut spawner, config)?;
+    let configurator = configure::<_, _, _, _>(startup, config)?;
 
-    let http = HttpServer::new(move || App::new().configure(|ctx| configurator(ctx)))
-        .bind("[::]:8080")?
-        .run()
-        .map_err(|err| anyhow!(err))
-        .boxed_local();
+    let http = HttpServer::new(move || {
+        App::new()
+            .wrap(TracingLogger::default())
+            .configure(|ctx| configurator(ctx))
+    })
+    .bind("[::]:8080")?
+    .run()
+    .map_err(|err| anyhow!(err));
 
-    spawner.spawn(http);
+    startup.spawn(http);
 
-    run_main(spawner).await
+    Ok(())
 }

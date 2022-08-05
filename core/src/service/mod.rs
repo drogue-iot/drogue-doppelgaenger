@@ -6,7 +6,6 @@ pub use error::*;
 pub use id::Id;
 pub use updater::*;
 
-use crate::app::Spawner;
 use crate::command::CommandSink;
 use crate::machine::{DeletionOutcome, Machine, OutboxMessage, Outcome};
 use crate::model::{Thing, WakerExt, WakerReason};
@@ -15,6 +14,7 @@ use crate::processor::{sink::Sink, Event};
 use crate::storage::{self, Storage};
 use crate::Preconditions;
 use chrono::{Duration, Utc};
+use drogue_bazaar::app::Startup;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
 use uuid::Uuid;
@@ -75,7 +75,7 @@ pub enum OutboxState {
 
 impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, Cmd> {
     pub fn from_config(
-        spawner: &mut dyn Spawner,
+        startup: &mut dyn Startup,
         config: Config<St, No, Si, Cmd>,
     ) -> anyhow::Result<Self> {
         let Config {
@@ -87,7 +87,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         let storage = St::from_config(&storage)?;
         let notifier = No::from_config(&notifier)?;
         let sink = Si::from_config(sink)?;
-        let command_sink = Cmd::from_config(spawner, command_sink)?;
+        let command_sink = Cmd::from_config(startup, command_sink)?;
         Ok(Self::new(storage, notifier, sink, command_sink))
     }
 

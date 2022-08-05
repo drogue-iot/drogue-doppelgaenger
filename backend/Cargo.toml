@@ -1,6 +1,6 @@
 [package]
 name = "drogue-doppelgaenger-backend"
-description = "Drogue IoT Doppelgänger Console Backend"
+description = "Drogue IoT Doppelgänger Backend"
 version = "0.1.0"
 authors = ["Jens Reimann <jreimann@redhat.com>"]
 edition = "2021"
@@ -10,6 +10,7 @@ license = "Apache-2.0"
 actix = "0.13"
 actix-web = "4"
 actix-web-actors = "4"
+tracing-actix-web = { version  = "0.6", features = ["opentelemetry_0_17"] }
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
@@ -22,5 +23,6 @@ thiserror = "1"
 time = "0.1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+drogue-bazaar = "0.1"
 
 drogue-doppelgaenger-core = { path = "../core" }

@@ -4,8 +4,8 @@ use crate::common::failure::{Failure, FailureProvider};
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use drogue_bazaar::core::Spawner;
 use drogue_doppelgaenger_core::{
-    app::Spawner,
     command::{Command, CommandSink},
     model::{Thing, WakerReason},
     notifier::Notifier,

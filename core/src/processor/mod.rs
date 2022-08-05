@@ -2,7 +2,6 @@ pub mod sink;
 pub mod source;
 
 use crate::{
-    app::Spawner,
     command::CommandSink,
     model::{Reconciliation, Thing, WakerReason},
     notifier::Notifier,
@@ -16,6 +15,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
+use drogue_bazaar::app::Startup;
 use json_patch::Patch;
 use lazy_static::lazy_static;
 use prometheus::{
@@ -218,10 +218,10 @@ where
     Cmd: CommandSink,
 {
     pub fn from_config(
-        spawner: &mut dyn Spawner,
+        startup: &mut dyn Startup,
         config: Config<St, No, Si, So, Cmd>,
     ) -> anyhow::Result<Self> {
-        let service = Service::from_config(spawner, config.service)?;
+        let service = Service::from_config(startup, config.service)?;
         let source = So::from_config(config.source)?;
 
         Ok(Self::new(service, source))

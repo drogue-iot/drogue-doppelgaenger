@@ -1,5 +1,5 @@
+use drogue_bazaar::app::{Startup, StartupExt};
 use drogue_doppelgaenger_core::{
-    app::{run_main, Spawner},
     command::{mqtt, CommandSink},
     notifier::{self, Notifier},
     processor::{
@@ -10,7 +10,6 @@ use drogue_doppelgaenger_core::{
     },
     storage::{postgres, Storage},
 };
-use futures::FutureExt;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config<St: Storage, No: Notifier, Si: Sink, So: Source, Cmd: CommandSink> {
@@ -27,13 +26,11 @@ pub async fn run(
         source::kafka::Source,
         mqtt::CommandSink,
     >,
+    startup: &mut dyn Startup,
 ) -> anyhow::Result<()> {
-    let mut spawner = vec![];
-    let processor = Processor::from_config(&mut spawner, config.processor)?;
+    let processor = Processor::from_config(startup, config.processor)?;
 
-    spawner.spawn(processor.run().boxed_local());
-
-    run_main(spawner).await?;
+    startup.spawn(processor.run());
 
     Ok(())
 }
