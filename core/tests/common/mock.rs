@@ -4,6 +4,7 @@ use crate::common::failure::{Failure, FailureProvider};
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use drogue_bazaar::app::Startup;
 use drogue_bazaar::core::Spawner;
 use drogue_doppelgaenger_core::{
     command::{Command, CommandSink},
@@ -332,7 +333,7 @@ impl CommandSink for MockCommandSink {
     type Error = Infallible;
     type Config = ();
 
-    fn from_config(spawner: &mut dyn Spawner, config: Self::Config) -> anyhow::Result<Self> {
+    fn from_config(startup: &mut dyn Startup, config: Self::Config) -> anyhow::Result<Self> {
         panic!("Not implemented")
     }
 

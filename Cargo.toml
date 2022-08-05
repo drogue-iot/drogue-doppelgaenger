@@ -12,6 +12,6 @@ exclude = [
 ]
 
 [patch.crates-io]
-drogue-bazaar = { path = "../drogue-bazaar" }
+#drogue-bazaar = { path = "../drogue-bazaar" }
 actix-web = { git = "https://github.com/ctron/actix-web", rev = "f3f41a0cc70e43564f8243b3ff425195566b5f16"} # FIXME: awaiting release 4.2.0
 actix-http = { git = "https://github.com/ctron/actix-web", rev = "f3f41a0cc70e43564f8243b3ff425195566b5f16"} # FIXME: awaiting release 4.2.0
