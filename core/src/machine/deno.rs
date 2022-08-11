@@ -2,6 +2,7 @@ use deno_core::{include_js_files, serde_v8, v8, Extension, JsRuntime, RuntimeOpt
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio::{runtime::Handle, task::JoinHandle, time::Instant};
+use tracing::{instrument, Span};
 
 #[derive(Clone, Debug)]
 pub struct DenoOptions {
@@ -134,6 +135,7 @@ impl Execution {
         }
     }
 
+    #[instrument(skip_all)]
     fn create_runtime(&self) -> JsRuntime {
         // disable some operations
         let disable = Extension::builder()
@@ -148,14 +150,20 @@ impl Execution {
             .js(include_js_files!(prefix "drogue:extensions/api", "js/core.js",))
             .build();
 
+        tracing::info!("Built extensions");
+
         // FIXME: doesn't work as advertised, we keep it anyway
         let create_params = v8::Isolate::create_params().heap_limits(0, 3 * 1024 * 1024);
+
+        tracing::info!("Created parameters");
 
         let mut runtime = JsRuntime::new(RuntimeOptions {
             create_params: Some(create_params),
             extensions: vec![disable, api],
             ..Default::default()
         });
+
+        tracing::info!("Created runtime");
 
         let isolate = runtime.v8_isolate().thread_safe_handle();
         runtime.add_near_heap_limit_callback(move |_, current| {
@@ -167,7 +175,8 @@ impl Execution {
         runtime
     }
 
-    pub async fn run<I, O, R>(self, input: I) -> anyhow::Result<ExecutionResult<O, R>>
+    #[instrument(parent = parent, skip_all)]
+    fn run_inner<I, O, R>(self, parent: Span, input: I) -> anyhow::Result<ExecutionResult<O, R>>
     where
         I: Injectable + 'static,
         O: Extractable + 'static,
@@ -176,44 +185,57 @@ impl Execution {
         struct Deadline(JoinHandle<()>);
         impl Drop for Deadline {
             fn drop(&mut self) {
+                tracing::warn!("Aborting script");
                 self.0.abort();
             }
         }
 
+        let mut runtime = self.create_runtime();
+
+        let name = self.name;
+        let code = self.code;
+
+        let isolate = runtime.v8_isolate().thread_safe_handle();
+        let deadline = Deadline(Handle::current().spawn(async move {
+            tokio::time::sleep_until(self.opts.deadline).await;
+            isolate.terminate_execution();
+        }));
+
+        input.inject(&mut runtime, "context")?;
+
+        tracing::info!("Execute script");
+        let global = runtime.execute_script(&name, &code)?;
+
+        let return_value = R::r#return(&mut runtime, global)?;
+
+        Handle::current().block_on(async { runtime.run_event_loop(false).await })?;
+
+        tracing::info!("Awaited event loop");
+
+        // FIXME: eval late result
+
+        // stop the deadline watcher
+        drop(deadline);
+
+        //let output = extract_context(&mut runtime)?;
+        let output = O::extract(&mut runtime, "context")?;
+
+        Ok::<_, anyhow::Error>(ExecutionResult {
+            output,
+            return_value,
+        })
+    }
+
+    #[instrument(skip_all, err)]
+    pub async fn run<I, O, R>(self, input: I) -> anyhow::Result<ExecutionResult<O, R>>
+    where
+        I: Injectable + 'static,
+        O: Extractable + 'static,
+        R: Returnable + 'static,
+    {
+        let span = Span::current();
         Handle::current()
-            .spawn_blocking(move || {
-                let mut runtime = self.create_runtime();
-
-                let name = self.name;
-                let code = self.code;
-
-                let isolate = runtime.v8_isolate().thread_safe_handle();
-                let deadline = Deadline(Handle::current().spawn(async move {
-                    tokio::time::sleep_until(self.opts.deadline).await;
-                    isolate.terminate_execution();
-                }));
-
-                // set_context::<_, O>(&mut runtime, input)?;
-                input.inject(&mut runtime, "context")?;
-
-                let global = runtime.execute_script(&name, &code)?;
-
-                let return_value = R::r#return(&mut runtime, global)?;
-
-                Handle::current().block_on(async { runtime.run_event_loop(false).await })?;
-                // FIXME: eval late result
-
-                // stop the deadline watcher
-                drop(deadline);
-
-                //let output = extract_context(&mut runtime)?;
-                let output = O::extract(&mut runtime, "context")?;
-
-                Ok::<_, anyhow::Error>(ExecutionResult {
-                    output,
-                    return_value,
-                })
-            })
+            .spawn_blocking(move || self.run_inner(span, input))
             .await?
     }
 }

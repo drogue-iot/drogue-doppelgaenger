@@ -6,11 +6,12 @@ use crate::{
 };
 use async_trait::async_trait;
 use std::{fmt::Debug, future::Future};
+use tracing::instrument;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error<E>
 where
-    E: Send + Sync,
+    E: Send + Sync + std::error::Error,
 {
     /// Returned when an option should modify a thing, but it could not be found.
     ///
@@ -34,8 +35,8 @@ where
 #[derive(thiserror::Error)]
 pub enum UpdateError<SE, UE>
 where
-    SE: Send + Sync,
-    UE: Send + Sync,
+    SE: Send + Sync + std::error::Error,
+    UE: Send + Sync + std::error::Error,
 {
     #[error("Service error: {0}")]
     Service(#[from] Error<SE>),
@@ -55,6 +56,7 @@ pub trait Storage: Sized + Send + Sync + 'static {
     async fn create(&self, thing: Thing) -> Result<Thing, Error<Self::Error>>;
     async fn update(&self, thing: Thing) -> Result<Thing, Error<Self::Error>>;
 
+    #[instrument(skip(self, f), err, ret)]
     async fn patch<F, Fut, E>(
         &self,
         application: &str,
@@ -64,7 +66,7 @@ pub trait Storage: Sized + Send + Sync + 'static {
     where
         F: FnOnce(Thing) -> Fut + Send + Sync,
         Fut: Future<Output = Result<Thing, E>> + Send + Sync,
-        E: Send + Sync,
+        E: Send + Sync + std::error::Error,
     {
         log::debug!("Updating existing thing: {application} / {name}");
 

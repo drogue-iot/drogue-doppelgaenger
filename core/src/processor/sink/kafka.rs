@@ -1,12 +1,14 @@
 use crate::config::kafka::KafkaProperties;
+use crate::kafka::KafkaHeaders;
 use crate::processor::Event;
 use anyhow::anyhow;
 use async_trait::async_trait;
+use opentelemetry::global::get_text_map_propagator;
 use rdkafka::config::FromClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
+use tracing::instrument;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
@@ -54,6 +56,12 @@ impl super::Sink for Sink {
         })
     }
 
+    #[instrument(skip_all, fields(
+        id=event.id,
+        timestamp=%event.timestamp,
+        application=event.application,
+        thing=event.thing
+    ), err)]
     async fn publish(&self, event: Event) -> anyhow::Result<()> {
         let key = format!("{}/{}", event.application, event.thing);
 
@@ -66,8 +74,14 @@ impl super::Sink for Sink {
             .add("ce_type", "io.drogue.doppelgeanger.event.v1")
             .add("ce_timestamp", &event.timestamp.to_rfc3339())
             .add("content-type", "application/json")
-            .add("application", &event.application)
-            .add("thing", &event.thing);
+            .add("ce_application", &event.application)
+            .add("ce_thing", &event.thing);
+
+        let mut headers = KafkaHeaders::from(headers);
+        get_text_map_propagator(|prop| {
+            prop.inject(&mut headers);
+        });
+        let headers = headers.into();
 
         let record = FutureRecord::to(&self.topic)
             .key(&key)

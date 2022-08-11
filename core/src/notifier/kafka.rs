@@ -10,6 +10,7 @@ use rdkafka::{
     util::Timeout,
 };
 use std::{collections::HashMap, time::Duration};
+use tracing::instrument;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
@@ -69,6 +70,7 @@ impl super::Notifier for Notifier {
         })
     }
 
+    #[instrument(skip_all, err)]
     async fn notify(&self, thing: &Thing) -> Result<(), notifier::Error<Self::Error>> {
         let Metadata {
             application, name, ..

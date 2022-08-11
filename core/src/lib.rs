@@ -2,6 +2,7 @@ pub mod command;
 pub mod config;
 pub mod error;
 pub mod injector;
+pub mod kafka;
 pub mod listener;
 pub mod machine;
 pub mod model;

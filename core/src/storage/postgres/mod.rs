@@ -10,7 +10,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use deadpool_postgres::{PoolError, Runtime};
+use deadpool_postgres::{Object, PoolError, Runtime};
 use postgres_types::Type;
 use std::collections::BTreeMap;
 use tokio_postgres::{
@@ -18,6 +18,7 @@ use tokio_postgres::{
     types::{Json, ToSql},
     Row,
 };
+use tracing::instrument;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -133,6 +134,7 @@ impl super::Storage for Storage {
         Ok(Self { application, pool })
     }
 
+    #[instrument(skip(self), err)]
     async fn get(&self, application: &str, name: &str) -> Result<Option<Thing>> {
         if let Err(storage::Error::NotFound) =
             self.ensure_app(application, || storage::Error::NotFound)
@@ -140,7 +142,7 @@ impl super::Storage for Storage {
             return Ok(None);
         }
 
-        let con = self.pool.get().await.map_err(Error::Pool)?;
+        let con = self.connection().await?;
 
         let stmt = con
             .prepare_typed_cached(
@@ -169,6 +171,8 @@ WHERE
             )
             .await
             .map_err(Error::Postgres)?;
+
+        tracing::info!("Prepared statement");
 
         match con
             .query_opt(&stmt, &[&name, &application])
@@ -202,10 +206,11 @@ WHERE
         }
     }
 
+    #[instrument(skip_all, err)]
     async fn create(&self, mut thing: Thing) -> Result<Thing> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotAllowed)?;
 
-        let con = self.pool.get().await.map_err(Error::Pool)?;
+        let con = self.connection().await?;
 
         // Init metadata. We need to set this on the thing too, as we return it.
         let uid = Uuid::new_v4();
@@ -270,6 +275,8 @@ INSERT INTO things (
             .await
             .map_err(Error::Postgres)?;
 
+        tracing::info!("Prepared statement");
+
         con.execute(
             &stmt,
             &[
@@ -294,10 +301,11 @@ INSERT INTO things (
         Ok(thing.clone())
     }
 
+    #[instrument(skip_all, err)]
     async fn update(&self, mut thing: Thing) -> Result<Thing> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotFound)?;
 
-        let con = self.pool.get().await.map_err(Error::Pool)?;
+        let con = self.connection().await?;
 
         let name = &thing.metadata.name;
         let application = &thing.metadata.application;
@@ -370,9 +378,15 @@ RETURNING
             .await
             .map_err(Error::Postgres)?;
 
+        tracing::info!("Prepared statement");
+
         match con.query_opt(&stmt, &params).await {
-            Ok(None) => Err(storage::Error::PreconditionFailed),
+            Ok(None) => {
+                tracing::info!("Precondition failed");
+                Err(storage::Error::PreconditionFailed)
+            }
             Ok(Some(row)) => {
+                tracing::info!("Row updated");
                 // update metadata, with new values
 
                 thing.metadata.uid = row.try_get("UID").map_err(Error::Postgres)?;
@@ -390,6 +404,7 @@ RETURNING
         }
     }
 
+    #[instrument(skip(self), err, ret)]
     async fn delete_with(
         &self,
         application: &str,
@@ -402,7 +417,7 @@ RETURNING
             return Ok(false);
         }
 
-        let con = self.pool.get().await.map_err(Error::Pool)?;
+        let con = self.connection().await?;
 
         log::debug!("Deleting thing: {application} / {name}");
 
@@ -441,7 +456,11 @@ WHERE
             .await
             .map_err(Error::Postgres)?;
 
+        tracing::info!("Prepared statement");
+
         let rows = con.execute(&stmt, &params).await.map_err(Error::Postgres)?;
+
+        tracing::info!(rows, "Statement executed");
 
         Ok(rows > 0)
     }
@@ -459,6 +478,11 @@ impl Storage {
             }
         }
         Ok(())
+    }
+
+    #[instrument(skip_all, err)]
+    async fn connection(&self) -> std::result::Result<Object, Error> {
+        self.pool.get().await.map_err(Error::Pool)
     }
 }
 
