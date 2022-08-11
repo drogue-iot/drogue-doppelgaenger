@@ -4,35 +4,35 @@
 
 [source,shell]
 ----
-http POST localhost:8080/api/v1alpha1/things metadata:='{"name": "foo", "application": "default"}'
+http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"name": "foo", "application": "default"}'
 ----
 
 == Delete a thing
 
 [source,shell]
 ----
-http DELETE localhost:8080/api/v1alpha1/things/default/things/foo
+http $HTTP_OPTS DELETE localhost:8080/api/v1alpha1/things/default/things/foo
 ----
 
 == Get a thing
 
 [source,shell]
 ----
-http GET localhost:8080/api/v1alpha1/things/default/things/foo
+http $HTTP_OPTS GET localhost:8080/api/v1alpha1/things/default/things/foo
 ----
 
 == Update a thing
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things metadata:='{"name": "foo", "application": "default"}'
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things metadata:='{"name": "foo", "application": "default"}'
 ----
 
 == Update reported state
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates temperature:=42
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates temperature:=42
 ----
 
 == Patch a thing
@@ -41,14 +41,14 @@ With a JSON patch:
 
 [source,shell]
 ----
-http PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/json-patch+json '[0][op]=replace' '[0][path]=/reportedState/temperature/value' '[0][value]=43'
+http $HTTP_OPTS PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/json-patch+json '[0][op]=replace' '[0][path]=/reportedState/temperature/value' '[0][value]=43'
 ----
 
 Or with a strategic merge:
 
 [source,shell]
 ----
-http PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/merge-patch+json 'reportedState[temperature][value]:=43'
+http $HTTP_OPTS PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/merge-patch+json 'reportedState[temperature][value]:=43'
 ----
 
 
@@ -56,5 +56,5 @@ http PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:ap
 
 [source,shell]
 ----
-http PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/json-patch+json '[0][op]=remove' '[0][path]=/metadata/annotations/condition~1overTemp'
+http $HTTP_OPTS PATCH localhost:8080/api/v1alpha1/things/default/things/foo content-type:application/json-patch+json '[0][op]=remove' '[0][path]=/metadata/annotations/condition~1overTemp'
 ----

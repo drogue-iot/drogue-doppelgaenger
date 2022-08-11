@@ -1,7 +1,10 @@
+run-deps:
+    podman-compose -f develop/docker-compose.yml up
+
 start-deps:
-    podman play kube develop/services.yaml
+    podman-compose -f develop/docker-compose.yml up -d
 
 stop-deps:
-    -podman play kube develop/services.yaml --down
+    podman-compose -f develop/docker-compose.yml down
 
 restart-deps: stop-deps start-deps

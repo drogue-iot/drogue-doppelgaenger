@@ -10,14 +10,14 @@ include::20_reconcile/recon1.js[]
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTemp][javaScript]=@20_reconcile/recon1.js'
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTemp][javaScript]=@20_reconcile/recon1.js'
 ----
 
 Set over temp value:
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates temperature:=62
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates temperature:=62
 ----
 
 Reset with a value below `60`.
@@ -26,7 +26,7 @@ Reset with a value below `60`.
 
 [source,shell]
 ----
-http POST localhost:8080/api/v1alpha1/things metadata:='{"name": "overTempGroup", "application": "default"}'
+http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"name": "overTempGroup", "application": "default"}'
 ----
 
 .recon1.js
@@ -37,5 +37,5 @@ include::20_reconcile/recon2.js[]
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTempGroup][javaScript]=@20_reconcile/recon2.js'
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/reconciliations 'changed[overTempGroup][javaScript]=@20_reconcile/recon2.js'
 ----

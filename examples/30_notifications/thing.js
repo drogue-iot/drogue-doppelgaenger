@@ -1,7 +1,12 @@
 'use strict';
 
 class Api {
-    constructor(url, application) {
+    constructor(url, application, options) {
+        this.options = {
+            ...{
+            }, ...options
+        };
+
         this.websocketUrl = new URL(url);
 
         if (this.websocketUrl.protocol === "http:") {
@@ -33,8 +38,32 @@ class Thing {
 
     #connect() {
         this.#connecting = false;
+        if (this.api.options.tokenProvider !== undefined) {
+            console.debug("Need to fetch a token first");
+            this.api.options.tokenProvider()
+                .then((token) => {
+                    console.debug("Got the token, now we can connect");
+                    this.#connectWithToken(token)
+                })
+                .catch(() => {
+                    console.log("Failed to get token");
+                    this.#notifyAll({
+                        type: "disconnected"
+                    })
+                    this.#reconnect();
+                })
+        } else {
+            this.#connectWithToken();
+        }
+    }
 
-        const url = this.api.websocketUrl + `api/v1alpha1/things/${encodeURIComponent(this.api.application)}/things/${encodeURIComponent(this.thing)}/notifications`;
+    #connectWithToken(token) {
+        let url = new URL(this.api.websocketUrl + `api/v1alpha1/things/${encodeURIComponent(this.api.application)}/things/${encodeURIComponent(this.thing)}/notifications`);
+
+        if (token !== undefined) {
+            url.searchParams.set("token", token);
+        }
+
         console.debug(`Connecting to: ${url}`);
         this.#socket = new WebSocket(url);
         this.#socket.addEventListener('message', (event) => {

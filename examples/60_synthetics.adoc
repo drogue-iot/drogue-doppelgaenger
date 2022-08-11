@@ -10,7 +10,7 @@ include::60_synthetics/syn1.js[]
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/const javaScript=@60_synthetics/syn1.js
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/const javaScript=@60_synthetics/syn1.js
 ----
 
 == Convert a value
@@ -25,7 +25,7 @@ include::60_synthetics/syn2.js[]
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/temperature_f javaScript=@60_synthetics/syn2.js
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/temperature_f javaScript=@60_synthetics/syn2.js
 ----
 
 == Add two values
@@ -38,13 +38,13 @@ include::60_synthetics/syn3.js[]
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/add javaScript=@60_synthetics/syn3.js
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates value1:=42 value2:=23
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/add javaScript=@60_synthetics/syn3.js
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/reportedStates value1:=42 value2:=23
 ----
 
 == Rename a feature
 
 [source,shell]
 ----
-http PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/rename1 alias=value1
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/foo/syntheticStates/rename1 alias=value1
 ----

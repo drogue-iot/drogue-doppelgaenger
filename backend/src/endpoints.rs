@@ -6,6 +6,7 @@ use crate::{
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use chrono::Utc;
+use drogue_bazaar::auth::UserInformation;
 use drogue_doppelgaenger_core::{
     command::CommandSink,
     listener::KafkaSource,
@@ -248,7 +249,10 @@ pub async fn things_notifications_single<S: Storage, N: Notifier, Si: Sink, Cmd:
     source: web::Data<KafkaSource>,
     service: web::Data<Service<S, N, Si, Cmd>>,
     instance: web::Data<Instance>,
+    user: UserInformation,
 ) -> Result<HttpResponse, actix_web::Error> {
+    log::info!("Start single notification: {user:?}");
+
     let (application, thing) = path.into_inner();
     if let Some(expected_application) = &instance.application {
         if expected_application != &application {
