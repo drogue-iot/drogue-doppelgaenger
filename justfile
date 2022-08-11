@@ -1,10 +1,10 @@
 run-deps:
-    podman-compose -f develop/docker-compose.yml up
+    podman-compose -f develop/compose.yaml up
 
 start-deps:
-    podman-compose -f develop/docker-compose.yml up -d
+    podman-compose -f develop/compose.yaml up -d
 
 stop-deps:
-    podman-compose -f develop/docker-compose.yml down
+    podman-compose -f develop/compose.yaml down
 
 restart-deps: stop-deps start-deps
