@@ -1,0 +1,34 @@
+== OAuth
+
+Get a fresh token:
+
+NOTE: `bfa33cd2-18bd-11ed-a9f9-d45d6455d2cc` is a hardcoded default client secret in `server/src/keycloak.rs`. It will
+only work if run with Keycloak and the `server` binary.
+
+[source,shell]
+----
+http --form POST localhost:8081/realms/doppelgaenger/protocol/openid-connect/token grant_type=client_credentials client_id=services client_secret=bfa33cd2-18bd-11ed-a9f9-d45d6455d2cc | jq -r .access_token
+----
+
+In order to use this with the following examples, set the following variable:
+
+[NOTE]
+.Refresh tokens every 5 minutes
+====
+These tokens will expire every 5 minutes. Be sure to re-run the following snippet to get a fresh token.
+====
+
+Using Bash:
+
+[source,shell]
+----
+HTTP_OPTS="-A bearer -a $(http --form POST localhost:8081/realms/doppelgaenger/protocol/openid-connect/token grant_type=client_credentials client_id=services client_secret=bfa33cd2-18bd-11ed-a9f9-d45d6455d2cc | jq -r .access_token)"
+----
+
+Using Fish:
+
+[source,shell]
+----
+set -x HTTP_OPTS -A bearer -a $(http --form POST localhost:8081/realms/doppelgaenger/protocol/openid-connect/token grant_type=client_credentials client_id=services client_secret=bfa33cd2-18bd-11ed-a9f9-d45d6455d2cc | jq -r .access_token)
+----
+

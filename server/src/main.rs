@@ -1,10 +1,17 @@
+mod keycloak;
+
 #[macro_use]
 extern crate diesel_migrations;
 
-use actix_web::{App, HttpServer};
-use anyhow::anyhow;
-use drogue_bazaar::app::Startup;
-use drogue_bazaar::{core::SpawnerExt, runtime};
+use crate::keycloak::SERVICE_CLIENT_SECRET;
+use drogue_bazaar::auth::openid::{AuthenticatorClientConfig, AuthenticatorGlobalConfig};
+use drogue_bazaar::{
+    actix::http::{CorsBuilder, HttpBuilder, HttpConfig},
+    app::{RuntimeConfig, Startup},
+    auth::openid::AuthenticatorConfig,
+    core::{config::ConfigFromEnv, SpawnerExt},
+    runtime,
+};
 use drogue_doppelgaenger_core::{
     command,
     config::kafka::KafkaProperties,
@@ -18,14 +25,14 @@ use drogue_doppelgaenger_core::{
     storage::postgres,
     waker::{self},
 };
-use futures::{FutureExt, TryFutureExt};
+use futures::FutureExt;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     config::FromClientConfig,
 };
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::runtime::Handle;
-use tracing_actix_web::TracingLogger;
 
 embed_migrations!("../database-migration/migrations");
 
@@ -55,6 +62,15 @@ pub struct Server {
     #[serde(with = "humantime_serde")]
     #[serde(default = "waker::postgres::default::check_duration")]
     check_duration: Duration,
+
+    #[serde(default)]
+    http: HttpConfig,
+
+    #[serde(default)]
+    oauth: Option<AuthenticatorConfig>,
+
+    #[serde(default)]
+    keycloak: keycloak::Keycloak,
 }
 
 mod default {
@@ -123,6 +139,67 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
     .await
     .unwrap();
 
+    let oauth = if !server.keycloak.disabled {
+        keycloak::configure_keycloak(&server.keycloak)
+            .await
+            .map_err(|err| {
+                log::error!("Failed to setup keycloak: {err}");
+                err
+            })
+            .expect("Set up keycloak");
+        log::info!("OAuth: {:?}", server.oauth);
+        server.oauth.or_else(|| {
+            let mut clients = HashMap::new();
+            clients.insert(
+                "api".to_string(),
+                AuthenticatorClientConfig {
+                    client_id: "api".to_string(),
+                    client_secret: "".to_string(),
+                    scopes: "openid profile".to_string(),
+                    issuer_url: None,
+                    tls_insecure: None,
+                    tls_ca_certificates: None,
+                },
+            );
+            clients.insert(
+                "services".to_string(),
+                AuthenticatorClientConfig {
+                    client_id: "services".to_string(),
+                    client_secret: SERVICE_CLIENT_SECRET.to_string(),
+                    scopes: "openid profile".to_string(),
+                    issuer_url: None,
+                    tls_insecure: None,
+                    tls_ca_certificates: None,
+                },
+            );
+            Some(AuthenticatorConfig {
+                disabled: false,
+                global: AuthenticatorGlobalConfig {
+                    issuer_url: Some(format!(
+                        "{}/realms/{}",
+                        server.keycloak.url, server.keycloak.realm
+                    )),
+                    redirect_url: None,
+                    tls_insecure: true,
+                    tls_ca_certificates: Default::default(),
+                },
+                clients,
+            })
+        })
+    } else {
+        server.oauth
+    }
+    .unwrap_or_else(|| AuthenticatorConfig {
+        disabled: true,
+        global: AuthenticatorGlobalConfig {
+            issuer_url: None,
+            redirect_url: None,
+            tls_insecure: false,
+            tls_ca_certificates: Default::default(),
+        },
+        clients: Default::default(),
+    });
+
     let service = service::Config {
         storage: postgres::Config {
             application: server.application.clone(),
@@ -141,21 +218,20 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
         application: server.application.clone(),
         service: service.clone(),
         listener: server.notifier_source,
+        oauth,
+        user_auth: None,
     };
 
-    let configurator = drogue_doppelgaenger_backend::configure(startup, backend)?;
+    let configurator = drogue_doppelgaenger_backend::configure(startup, backend).await?;
 
     // prepare the http server
 
-    let http = HttpServer::new(move || {
-        App::new()
-            .wrap(TracingLogger::default())
-            .configure(|ctx| configurator(ctx))
+    let runtime = RuntimeConfig::from_env()?;
+    HttpBuilder::new(server.http.clone(), Some(&runtime), move |config| {
+        config.configure(|ctx| configurator(ctx));
     })
-    .bind("[::]:8080")?
-    .run()
-    .map_err(|err| anyhow!(err))
-    .boxed_local();
+    .cors(CorsBuilder::Permissive)
+    .start(startup)?;
 
     // prepare the incoming events processor
 
@@ -169,7 +245,7 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
 
     let service = Service::from_config(startup, service)?;
 
-    let processor = Processor::new(service, source).run().boxed_local();
+    let processor = Processor::new(service, source).run().boxed();
 
     let waker = waker::Processor::from_config(waker::Config::<
         waker::postgres::Waker,
@@ -185,7 +261,7 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
     .run()
     .boxed_local();
 
-    startup.spawn_iter([http, processor, waker]);
+    startup.spawn_iter([processor, waker]);
 
     Ok(())
 }
