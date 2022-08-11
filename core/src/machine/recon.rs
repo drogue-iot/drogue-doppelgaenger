@@ -15,6 +15,7 @@ use chrono::{DateTime, Duration, Utc};
 use indexmap::IndexMap;
 use serde_json::Value;
 use std::sync::Arc;
+use tracing::instrument;
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +48,7 @@ impl Reconciler {
         }
     }
 
+    #[instrument(skip_all, err)]
     pub async fn run(mut self) -> Result<Outcome, Error> {
         // cleanup first
         self.cleanup();
@@ -108,6 +110,7 @@ impl Reconciler {
         }
     }
 
+    #[instrument(skip_all, err)]
     async fn generate_synthetics(&mut self) -> Result<(), Error> {
         let now = Utc::now();
 
@@ -253,6 +256,7 @@ impl Reconciler {
         Ok(())
     }
 
+    #[instrument(skip_all, err)]
     async fn reconcile_desired_state(&mut self) -> Result<(), Error> {
         // sync first
         self.sync_desired_state()?;
@@ -327,6 +331,7 @@ impl Reconciler {
         Ok(())
     }
 
+    #[instrument(skip_all, err)]
     async fn reconcile_changed(&mut self, changed: IndexMap<String, Changed>) -> Result<(), Error> {
         for (name, mut changed) in changed {
             let ExecutionResult { logs } = self
@@ -344,6 +349,7 @@ impl Reconciler {
         Ok(())
     }
 
+    #[instrument(skip_all, err)]
     async fn reconcile_timers(&mut self, timers: IndexMap<String, Timer>) -> Result<(), Error> {
         for (name, mut timer) in timers {
             let due = match timer.stopped {
@@ -421,6 +427,7 @@ impl Reconciler {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(name, action), err)]
     async fn run_code(
         &mut self,
         name: String,
@@ -495,6 +502,7 @@ impl Reconciler {
         }
     }
 
+    #[instrument(skip_all, fields(name), err)]
     async fn run_synthetic(
         name: &str,
         r#type: &SyntheticType,

@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use drogue_bazaar::app::Startup;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
+use tracing::instrument;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Command {
@@ -22,6 +23,7 @@ pub trait CommandSink: Sized + Send + Sync + 'static {
 
     async fn send_command(&self, command: Command) -> Result<(), Self::Error>;
 
+    #[instrument(skip_all, err)]
     async fn send_commands(&self, commands: Vec<Command>) -> Result<(), Self::Error> {
         for command in commands {
             self.send_command(command).await?;

@@ -16,6 +16,7 @@ use lazy_static::lazy_static;
 use prometheus::{register_histogram, Histogram};
 use serde_json::Value;
 use std::{convert::Infallible, fmt::Debug, future::Future, sync::Arc};
+use tracing::instrument;
 
 lazy_static! {
     static ref TIMER_DELAY: Histogram =
@@ -62,6 +63,7 @@ impl Machine {
     }
 
     /// Run actions for creating a new thing.
+    #[instrument(skip_all, err)]
     pub async fn create(new_thing: Thing) -> Result<Outcome, Error> {
         // Creating means that we start with an empty thing, and then set the initial state.
         // This allows to run through the reconciliation initially.
@@ -77,6 +79,7 @@ impl Machine {
     }
 
     /// Run an update.
+    #[instrument(skip_all, err)]
     pub async fn update<F, Fut, E>(self, f: F) -> Result<Outcome, Error>
     where
         F: FnOnce(Thing) -> Fut,
@@ -149,6 +152,7 @@ impl Machine {
         })
     }
 
+    #[instrument(skip_all, err)]
     pub async fn delete(thing: Thing) -> Result<DeletionOutcome, Error> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
 
@@ -210,6 +214,7 @@ impl Machine {
         })
     }
 
+    #[instrument(skip_all, err)]
     fn validate(new_thing: &Thing) -> Result<(), Error> {
         match &new_thing.schema {
             Some(Schema::Json(schema)) => match schema {

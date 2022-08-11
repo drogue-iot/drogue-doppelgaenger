@@ -7,9 +7,9 @@ use crate::keycloak::SERVICE_CLIENT_SECRET;
 use drogue_bazaar::auth::openid::{AuthenticatorClientConfig, AuthenticatorGlobalConfig};
 use drogue_bazaar::{
     actix::http::{CorsBuilder, HttpBuilder, HttpConfig},
-    app::{RuntimeConfig, Startup},
+    app::Startup,
     auth::openid::AuthenticatorConfig,
-    core::{config::ConfigFromEnv, SpawnerExt},
+    core::SpawnerExt,
     runtime,
 };
 use drogue_doppelgaenger_core::{
@@ -226,10 +226,13 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
 
     // prepare the http server
 
-    let runtime = RuntimeConfig::from_env()?;
-    HttpBuilder::new(server.http.clone(), Some(&runtime), move |config| {
-        config.configure(|ctx| configurator(ctx));
-    })
+    HttpBuilder::new(
+        server.http.clone(),
+        Some(startup.runtime_config()),
+        move |config| {
+            config.configure(|ctx| configurator(ctx));
+        },
+    )
     .cors(CorsBuilder::Permissive)
     .start(startup)?;
 

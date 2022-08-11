@@ -2,6 +2,7 @@ use crate::{command::Command, mqtt::MqttClient};
 use async_trait::async_trait;
 use drogue_bazaar::app::{Startup, StartupExt};
 use rumqttc::{AsyncClient, ClientError, Event, EventLoop, Incoming, Outgoing, QoS};
+use tracing::instrument;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
@@ -63,6 +64,11 @@ impl super::CommandSink for CommandSink {
         Ok(Self { client, mode })
     }
 
+    #[instrument(skip_all, fields(
+        application=command.application,
+        device=command.device,
+        channel=command.channel,
+    ), err)]
     async fn send_command(&self, command: Command) -> Result<(), Self::Error> {
         let topic = self
             .mode

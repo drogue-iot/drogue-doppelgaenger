@@ -6,10 +6,12 @@ use crate::{
     mqtt::MqttClient,
     processor::{sink::Sink, Event},
 };
+use anyhow::bail;
 use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter_vec, Histogram, IntCounterVec};
-use rumqttc::{AsyncClient, EventLoop, Incoming, QoS, SubscribeReasonCode};
+use rumqttc::{AsyncClient, EventLoop, Incoming, Publish, QoS, SubscribeReasonCode};
+use tracing::instrument;
 
 lazy_static! {
     static ref EVENTS: IntCounterVec = register_int_counter_vec!(
@@ -120,22 +122,9 @@ impl<S: Sink> Injector<S> {
                     }
                 }
                 Ok(rumqttc::Event::Incoming(Incoming::Publish(publish))) => {
-                    match self.build_event(&publish.payload) {
-                        Ok(Some(event)) => {
-                            log::debug!("Injecting event: {event:?}");
-                            if let Err(err) = self.sink.publish(event).await {
-                                log::error!("Failed to inject event: {err}, Exiting loop");
-                            }
-                            EVENTS.with_label_values(&["ok"]).inc();
-                        }
-                        Ok(None) => {
-                            // got skipped
-                            EVENTS.with_label_values(&["skipped"]).inc();
-                        }
-                        Err(err) => {
-                            EVENTS.with_label_values(&["failed"]).inc();
-                            log::info!("Unable to parse event: {err}, skipping...")
-                        }
+                    if let Err(err) = self.handle_publish(&publish).await {
+                        log::warn!("Failed to schedule message: {err}");
+                        break;
                     }
                     if perform_ack {
                         if let Err(err) = self.client.try_ack(&publish) {
@@ -158,6 +147,7 @@ impl<S: Sink> Injector<S> {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(payload_len=payload.len()), err)]
     fn build_event(&self, payload: &[u8]) -> anyhow::Result<Option<Event>> {
         let mut event: cloudevents::Event = serde_json::from_slice(payload)?;
 
@@ -191,5 +181,29 @@ impl<S: Sink> Injector<S> {
             thing,
             message,
         }))
+    }
+
+    #[instrument(skip_all, fields(topic=publish.topic, pkid=publish.pkid))]
+    async fn handle_publish(&self, publish: &Publish) -> anyhow::Result<()> {
+        match self.build_event(&publish.payload) {
+            Ok(Some(event)) => {
+                log::debug!("Injecting event: {event:?}");
+                if let Err(err) = self.sink.publish(event).await {
+                    log::error!("Failed to inject event: {err}, Exiting loop");
+                    bail!("Failed to inject event: {err}")
+                }
+                EVENTS.with_label_values(&["ok"]).inc();
+            }
+            Ok(None) => {
+                // got skipped
+                EVENTS.with_label_values(&["skipped"]).inc();
+            }
+            Err(err) => {
+                EVENTS.with_label_values(&["invalid"]).inc();
+                log::info!("Unable to parse event: {err}, skipping...");
+            }
+        }
+
+        Ok(())
     }
 }

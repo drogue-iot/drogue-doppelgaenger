@@ -47,8 +47,8 @@ http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"application
 http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "A4:C1:38:A2:6D:42/status" }' 'reconciliation[changed][hierarchy][javaScript]=@80_hierarchy/code.js' 'reconciliation[deleting][hierarchy][javaScript]=@80_hierarchy/code.js'
 http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"application": "default", "name": "holsetbakken-dungeon/foo" }' 'reconciliation[changed][hierarchy][javaScript]=@80_hierarchy/code.js' 'reconciliation[deleting][hierarchy][javaScript]=@80_hierarchy/code.js'
 
-http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8/annotations 'io.drogue/group=de/by/munich'
-http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42/annotations 'io.drogue/group=de/by/munich'
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8/annotations 'io.drogue/group=de/by/munich/room2'
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:A2:6D:42/annotations 'io.drogue/group=de/by/munich/room1'
 http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/default/things/holsetbakken-dungeon/annotations 'io.drogue/group=no/34/hamar'
 
 http $HTTP_OPTS GET localhost:8080/api/v1alpha1/things/default/things/A4:C1:38:0A:88:A8%2Fstatus

@@ -17,6 +17,7 @@ use chrono::{Duration, Utc};
 use drogue_bazaar::app::Startup;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
+use tracing::instrument;
 use uuid::Uuid;
 
 lazy_static! {
@@ -105,6 +106,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         &self.sink
     }
 
+    #[instrument(skip_all, err)]
     pub async fn create(&self, thing: Thing) -> Result<Thing, Error<St, No, Cmd>> {
         let Outcome {
             mut new_thing,
@@ -148,6 +150,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         Ok(new_thing)
     }
 
+    #[instrument(skip(self), err)]
     pub async fn get(&self, id: &Id) -> Result<Option<Thing>, Error<St, No, Cmd>> {
         self.storage
             .get(&id.application, &id.thing)
@@ -240,6 +243,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         Ok(true)
     }
 
+    #[instrument(skip(self, updater), err)]
     pub async fn update<U>(
         &self,
         id: &Id,
@@ -259,6 +263,11 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
             .map_err(Error::Storage)?;
 
         if current_thing.metadata.deletion_timestamp.is_some() {
+            tracing::event!(
+                tracing::Level::INFO,
+                deleted = true,
+                since = ?current_thing.metadata.deletion_timestamp
+            );
             // if we are already deleted, we don't do any more updates. Except processing
             // outgoing events.
 
@@ -381,6 +390,11 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         internal.outbox.extend(add);
     }
 
+    #[instrument(skip_all, fields(
+        application=new_thing.metadata.application,
+        name=new_thing.metadata.name,
+        uid=new_thing.metadata.uid,
+    ), err)]
     async fn send_and_ack(&self, mut new_thing: Thing) -> Result<Thing, Error<St, No, Cmd>> {
         let outbox = if let Some(outbox) = new_thing.internal.as_ref().map(|i| &i.outbox) {
             outbox
@@ -447,6 +461,11 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
     /// If there are unprocessed events, process them now.
     ///
     /// Return a new "current thing" refreshed from the storage.
+    #[instrument(skip(self, current_thing), fields(
+        application=current_thing.metadata.application,
+        name=current_thing.metadata.name,
+        uid=current_thing.metadata.uid,
+    ), err)]
     async fn check_unprocessed_events(
         &self,
         mut current_thing: Thing,
@@ -479,6 +498,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
     /// unprocessed events pending, which cannot be processed, from their point of view.
     ///
     /// Next we try to send, and clear the events.
+    #[instrument(skip_all, err)]
     async fn prepare_outbox(
         &self,
         mut thing: Thing,

@@ -6,8 +6,7 @@ pub use desired::*;
 pub use recon::*;
 pub use waker::*;
 
-use crate::processor::Event;
-use crate::service::Id;
+use crate::{processor::Event, service::Id};
 use base64::STANDARD;
 use base64_serde::base64_serde_type;
 use chrono::{DateTime, Duration, Utc};

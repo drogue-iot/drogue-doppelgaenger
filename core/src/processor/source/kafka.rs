@@ -8,8 +8,8 @@ use rdkafka::{
     message::{BorrowedMessage, Headers},
     Message,
 };
-use std::collections::HashMap;
-use std::future::Future;
+use std::{collections::HashMap, future::Future};
+use tracing::instrument;
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
@@ -23,6 +23,21 @@ pub struct EventStream {}
 
 pub struct Source {
     consumer: StreamConsumer,
+}
+
+impl Source {
+    #[instrument(skip_all, fields(
+        id=event.id,
+        application=event.application,
+        thing=event.thing,
+    ))]
+    async fn process<F, Fut>(f: &F, event: Event) -> anyhow::Result<()>
+    where
+        F: Fn(Event) -> Fut + Send + Sync,
+        Fut: Future<Output = anyhow::Result<()>> + Send,
+    {
+        f(event).await
+    }
 }
 
 #[async_trait]
@@ -69,7 +84,8 @@ impl super::Source for Source {
                     match from_msg(&msg) {
                         Ok(event) => {
                             log::debug!("Processing event: {event:?}");
-                            if let Err(err) = f(event).await {
+
+                            if let Err(err) = Self::process(&f, event).await {
                                 log::error!("Handler failed: {err}");
                                 break;
                             }
@@ -119,10 +135,10 @@ fn extract_meta(msg: &BorrowedMessage) -> anyhow::Result<(String, String, String
             Some(("ce_timestamp", Ok(value))) => {
                 timestamp = Some(value);
             }
-            Some(("application", Ok(value))) => {
+            Some(("ce_application", Ok(value))) => {
                 application = Some(value);
             }
-            Some(("thing", Ok(value))) => {
+            Some(("ce_thing", Ok(value))) => {
                 thing = Some(value);
             }
             _ => {}
@@ -136,10 +152,10 @@ fn extract_meta(msg: &BorrowedMessage) -> anyhow::Result<(String, String, String
             .ok_or_else(|| anyhow!("Missing 'ce_timestamp' header"))?
             .to_string(),
         application
-            .ok_or_else(|| anyhow!("Missing 'application' header"))?
+            .ok_or_else(|| anyhow!("Missing 'ce_application' header"))?
             .to_string(),
         thing
-            .ok_or_else(|| anyhow!("Missing 'thing' header"))?
+            .ok_or_else(|| anyhow!("Missing 'ce_thing' header"))?
             .to_string(),
     ))
 }

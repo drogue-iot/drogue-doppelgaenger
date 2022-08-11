@@ -24,6 +24,7 @@ use prometheus::{
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
+use tracing::instrument;
 use uuid::Uuid;
 
 lazy_static! {
@@ -235,6 +236,7 @@ where
     ///
     /// NOTE: This function respects a change in the `deletion_timestamp` and will trigger a
     /// deletion if the updater sets it.
+    #[instrument(skip_all, fields(id), err)]
     async fn run_cleanup<U>(
         service: &Service<St, No, Si, Cmd>,
         id: &Id,
@@ -296,6 +298,7 @@ where
     }
 
     /// Either update or insert a new thing
+    #[instrument(skip_all, fields(id), err)]
     async fn run_upsert<U>(
         service: &Service<St, No, Si, Cmd>,
         id: &Id,
@@ -353,6 +356,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip_all, fields(id), err)]
     async fn run_update<U>(
         service: &Service<St, No, Si, Cmd>,
         id: &Id,

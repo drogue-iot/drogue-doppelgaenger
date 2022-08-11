@@ -10,6 +10,7 @@ use std::future::Future;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tokio_postgres::Statement;
+use tracing::instrument;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -150,18 +151,17 @@ where
         con: Client,
         stmt: &'r (String, Vec<Type>),
         application: &'r Option<String>,
-
         f: &'r F,
     ) -> Self {
         Self {
             con,
             stmt,
             application,
-
             f,
         }
     }
 
+    #[instrument(skip_all, fields(application=self.application), err)]
     async fn run(mut self) -> anyhow::Result<()> {
         let stmt = self
             .con
