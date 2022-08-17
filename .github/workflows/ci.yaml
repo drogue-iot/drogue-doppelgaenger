@@ -250,7 +250,7 @@ jobs:
           make
           make install
           cd ..
-          PQ_LIB_STATIC=1 PQ_LIB_DIR=$PWD/libpq/lib SASL2_STATIC=1 OPENSSL_STATIC=1 OPENSSL_DIR=/usr/local/opt/openssl DEP_OPENSSL_DIR=/usr/local/opt/openssl RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -p drogue-doppelgaenger-server
+          PQ_LIB_STATIC=1 PQ_LIB_DIR=$PWD/libpq/lib SASL2_STATIC=1 OPENSSL_STATIC=1 OPENSSL_DIR=/usr/local/opt/openssl DEP_OPENSSL_DIR=/usr/local/opt/openssl RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -p drogue-doppelgaenger-server --features static
 
       - name: Upload server binary
         uses: actions/upload-artifact@v2
