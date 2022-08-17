@@ -23,20 +23,28 @@ RUN microdnf install -y libpq
 
 FROM base AS backend
 
+LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
+
 COPY --from=builder /output/drogue-doppelgaenger-backend /
 ENTRYPOINT [ "/drogue-doppelgaenger-backend" ]
 
 FROM base AS processor
+
+LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
 
 COPY --from=builder /output/drogue-doppelgaenger-processor /
 ENTRYPOINT [ "/drogue-doppelgaenger-processor" ]
 
 FROM base AS injector
 
+LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
+
 COPY --from=builder /output/drogue-doppelgaenger-injector /
 ENTRYPOINT [ "/drogue-doppelgaenger-injector" ]
 
 FROM base AS server
+
+LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
 
 COPY --from=builder /output/drogue-doppelgaenger-server /
 ENTRYPOINT [ "/drogue-doppelgaenger-server" ]
