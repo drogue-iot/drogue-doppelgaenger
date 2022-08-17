@@ -1,4 +1,5 @@
-FROM ghcr.io/drogue-iot/builder:latest AS builder
+ARG BUILDER_IMAGE=ghcr.io/drogue-iot/builder:latest
+FROM $BUILDER_IMAGE AS builder
 
 RUN mkdir -p /usr/src/cargo
 ADD . /usr/src/cargo/

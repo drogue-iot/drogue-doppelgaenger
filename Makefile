@@ -46,7 +46,7 @@ endif
 build-images:
 	set -e; \
 	for i in $(MODULES); do \
-		$(CONTAINER) build $(TOP_DIR) --from $(BUILDER_IMAGE) --target $${i} -t localhost/drogue-doppelgaenger-$${i}:latest; \
+		$(CONTAINER) build $(TOP_DIR) --build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) --target $${i} -t localhost/drogue-doppelgaenger-$${i}:latest; \
 	done
 
 
