@@ -2,12 +2,13 @@
 
 ## 0.1
 
-* [ ] RBAC
+* [x] ~~RBAC~~ Access control
 * [x] Re-process events: currently we only store them, but don't reprocess missed events
 * [x] Ensure that reported state "last updated" changes when only the value changes (move logic to machine)
 * [x] Allow unsetting a desired state, without deleting it
 * [ ] create kubernetes deployment
-* [ ] create a common `drogue-stuff` repository, containing common code
+* [x] create a common `drogue-stuff` repository, containing common code (called `drogue-bazaar`)
+* [ ] set up a CI
 
 ## Backlog
 
@@ -19,3 +20,4 @@
   * [ ] Allow more fine-grained control over this
 * [ ] Implement WASM
 * [ ] Prevent cyclic events
+* [ ] Finer grained RBAC

@@ -1,8 +1,9 @@
 [workspace]
 
 members = [
-    "core",
     "backend",
+    "core",
+    "injector",
     "processor",
     "server",
 ]
