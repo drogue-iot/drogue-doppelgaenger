@@ -132,6 +132,13 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential curl tzdata libssl-dev pkg-config libsasl2-dev librdkafka-dev libpq-dev libpqxx-dev
+
       - name: Run tests
         env:
           RUST_BACKTRACE: "1"
@@ -197,28 +204,11 @@ jobs:
         run: |
           PQ_LIB_STATIC=1 SASL2_STATIC=1 OPENSSL_STATIC=1 cargo build --release --features static -p drogue-doppelgaenger-server
 
-      - name: Build container image
-        run: |
-          # we have a pre-built binary, so we can skip the main build step
-          make -C server build-image
-
-      - name: Export container image
-        run: |
-          make -C server save-image
-          mv build/images/all.tar build/images/server.tar
-
       - name: Upload server binary
         uses: actions/upload-artifact@v2
         with:
           name: drogue-doppelgaenger-server-linux-amd64
           path: target/release/drogue-doppelgaenger-server
-          if-no-files-found: error
-
-      - name: Upload images
-        uses: actions/upload-artifact@v2
-        with:
-          name: container-image-server
-          path: build/images/server.tar
           if-no-files-found: error
 
 
