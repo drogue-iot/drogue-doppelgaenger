@@ -211,10 +211,7 @@ switch (context.action) {
         group_l_3.metadata.annotations["io.drogue/group"],
         "foo/bar/baz"
     );
-    assert_eq!(
-        group_l_3.reported_state["$parent"].value,
-        json!({"$ref": "/foo/bar"})
-    );
+    assert_eq!(group_l_3.reported_state["$parent"].value, json!("/foo/bar"));
 
     let group_l_2 = service
         .get(&Id::new("default", "/foo/bar"))
@@ -222,10 +219,7 @@ switch (context.action) {
         .unwrap()
         .expect("Group level 2 thing");
     assert_eq!(group_l_2.metadata.annotations["io.drogue/group"], "foo/bar");
-    assert_eq!(
-        group_l_2.reported_state["$parent"].value,
-        json!({"$ref": "/foo"})
-    );
+    assert_eq!(group_l_2.reported_state["$parent"].value, json!("/foo"));
 
     let group_l_1 = service
         .get(&Id::new("default", "/foo"))
@@ -233,10 +227,7 @@ switch (context.action) {
         .unwrap()
         .expect("Group level 1 thing");
     assert_eq!(group_l_1.metadata.annotations["io.drogue/group"], "foo");
-    assert_eq!(
-        group_l_1.reported_state["$parent"].value,
-        json!({"$ref": "/"})
-    );
+    assert_eq!(group_l_1.reported_state["$parent"].value, json!("/"));
 
     let root = service
         .get(&Id::new("default", "/"))
