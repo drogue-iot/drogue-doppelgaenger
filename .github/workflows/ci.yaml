@@ -99,6 +99,13 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential curl tzdata libssl-dev pkg-config libsasl2-dev librdkafka-dev libpq-dev libpqxx-dev
+
       - name: Check format
         run: cargo fmt --all -- --check
 
