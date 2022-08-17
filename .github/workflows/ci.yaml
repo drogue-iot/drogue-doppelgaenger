@@ -1,0 +1,259 @@
+name: CI
+
+on:
+  push:
+    # Run on the main branch
+    branches:
+      - main
+    # Releases are tags named 'v<version>', and must have the "major.minor.micro", for example: "0.1.0".
+    # Release candidates are tagged as `v<version>-rc<num>`, for example: "0.1.0-rc1".
+    tags:
+      - "v*"
+  # Also on PRs, just be careful not to publish anything
+  pull_request:
+
+env:
+  VERSION_HELM: "v3.9.2"
+  CONTAINER: docker
+
+jobs:
+
+  prepare:
+    runs-on: ubuntu-22.04
+
+    outputs:
+      do-build: ${{steps.changed-files-irrelevant.outputs.only_modified != 'true' || steps.state.outputs.release == 'true'}}
+      do-publish: ${{steps.state.outputs.do-publish}}
+      release: ${{steps.state.outputs.release}}
+      version: ${{steps.version.outputs.version}}
+      prerelease: ${{steps.state.outputs.prerelease}}
+
+    steps:
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      # Gather information for build
+
+      - name: Evaluate state
+        id: state
+        run: |
+          test -z "${{github.head_ref}}" && echo '::set-output name=do-publish::true'
+          if [[ "${{ github.event.ref }}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo ::set-output name=release::true
+              echo ::set-output name=release::true
+          elif [[ "${{ github.event.ref }}" =~ ^refs/tags/v.*$ ]]; then
+              echo ::set-output name=release::true
+              echo ::set-output name=prerelease::true
+          fi
+
+      - name: Set version
+        if: ${{github.head_ref == ''}}
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+          [ "$VERSION" == "main" ] && VERSION=latest
+          echo VERSION=$VERSION
+          echo "::set-output name=version::$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      # evaluate changed files
+      - name: Evaluate non-relevant changed files
+        id: changed-files-irrelevant
+        uses: tj-actions/changed-files@v23.1
+        with:
+          files: |
+            docs/
+
+  info:
+    name: info
+    runs-on: ubuntu-22.04
+    needs: [prepare]
+    steps:
+      - run: |
+          echo "do-build: ${{needs.prepare.outputs.do-build}}"
+          echo "do-publish: ${{needs.prepare.outputs.do-publish}}"
+          echo "release: ${{steps.state.outputs.release}}"
+          echo "version: ${{steps.version.outputs.version}}"
+          echo "prerelease: ${{steps.state.outputs.prerelease}}"
+
+  check:
+    runs-on: ubuntu-22.04
+    needs: [prepare]
+    if: needs.prepare.outputs.do-build == 'true'
+    steps:
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cargo-container-home
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check format
+        run: cargo fmt --all -- --check
+
+      - name: Check
+        run: cargo check --release
+
+  test:
+    name: test
+    runs-on: ubuntu-22.04
+    needs: [prepare, check]
+    if: needs.prepare.outputs.do-build == 'true'
+    steps:
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cargo-container-home
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run tests
+        env:
+          RUST_BACKTRACE: "1"
+        run: |
+          cargo test --release
+
+
+  build:
+    name: build
+    runs-on: ubuntu-22.04
+    needs: [prepare, check]
+    if: needs.prepare.outputs.do-build == 'true'
+    steps:
+
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Run build
+        run: |
+          make build-images
+
+      - name: Save images
+        run: |
+          make save-images
+
+      - name: Upload images
+        uses: actions/upload-artifact@v2
+        with:
+          name: container-images
+          path: build/images/all.tar
+          if-no-files-found: error
+
+
+  server-linux:
+    runs-on: ubuntu-22.04
+    needs: [prepare, check]
+    if: needs.prepare.outputs.do-build == 'true'
+    env:
+      VERSION: ${{needs.prepare.outputs.version}}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-server-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential curl tzdata libssl-dev pkg-config libsasl2-dev librdkafka-dev libpq-dev libpqxx-dev
+
+      - name: Build binary
+        run: |
+          PQ_LIB_STATIC=1 SASL2_STATIC=1 OPENSSL_STATIC=1 cargo build --release --features static -p drogue-doppelgaenger-server
+
+      - name: Build container image
+        run: |
+          # we have a pre-built binary, so we can skip the main build step
+          make -C server build-image
+
+      - name: Export container image
+        run: |
+          make -C server save-image
+          mv build/images/all.tar build/images/server.tar
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: drogue-doppelgaenger-server-linux-amd64
+          path: target/release/drogue-doppelgaenger-server
+          if-no-files-found: error
+
+      - name: Upload images
+        uses: actions/upload-artifact@v2
+        with:
+          name: container-image-server
+          path: build/images/server.tar
+          if-no-files-found: error
+
+
+  server-macos:
+    runs-on: macos-12
+    needs: [prepare, check]
+    if: needs.prepare.outputs.do-build == 'true'
+    env:
+      VERSION: ${{needs.prepare.outputs.version}}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-server-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build binary
+        shell: bash
+        run: |
+          brew update
+          brew install librdkafka openssl
+
+          # Build and install postgresql dep
+          curl -fsSL -o postgresql-11.13.tar.gz https://ftp.postgresql.org/pub/source/v11.13/postgresql-11.13.tar.gz
+          tar xvf postgresql-11.13.tar.gz
+          cd postgresql-11.13
+          ./configure --prefix=$PWD/../libpq
+          make
+          make install
+          cd ..
+          PQ_LIB_STATIC=1 PQ_LIB_DIR=$PWD/libpq/lib SASL2_STATIC=1 OPENSSL_STATIC=1 OPENSSL_DIR=/usr/local/opt/openssl DEP_OPENSSL_DIR=/usr/local/opt/openssl RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -p drogue-doppelgaenger-server
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: drogue-doppelgaenger-server-macos-amd64
+          path: target/release/drogue-doppelgaenger-server
+          if-no-files-found: error
+

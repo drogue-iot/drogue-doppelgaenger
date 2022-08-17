@@ -84,6 +84,7 @@ where
     }
 }
 
+#[allow(unused)]
 #[inline]
 pub fn func<F, R, E>(from: F) -> Failure<R, E>
 where
@@ -130,6 +131,7 @@ where
     }
 }
 
+#[allow(unused)]
 pub fn iter<F, R, E>(from: F) -> Failure<R, E>
 where
     F: IntoIterator<Item = Option<E>> + 'static,
