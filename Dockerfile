@@ -7,8 +7,7 @@ ADD . /usr/src/cargo/
 WORKDIR /usr/src/cargo/
 
 RUN \
-    --mount=type=cache,target=/usr/src/.cargo-container-home,z \
-    --mount=type=cache,target=/usr/src/cargo/target,z \
+    --mount=type=cache,target=/usr/src/.cargo-container-home,z --mount=type=cache,target=/usr/src/cargo/target,z \
     true \
     && mkdir -p /output \
     && cargo build --release \

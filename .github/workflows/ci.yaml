@@ -157,6 +157,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Fixup Dockerfile for Podman 3.x
+        run: |
+          sed -i '/^    --mount/d' Dockerfile
+          cat Dockerfile
+
       - name: Run build
         run: |
           make build-images
