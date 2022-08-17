@@ -14,7 +14,7 @@ on:
 
 env:
   VERSION_HELM: "v3.9.2"
-  CONTAINER: docker
+  CONTAINER: podman
 
 jobs:
 
