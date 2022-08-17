@@ -30,6 +30,7 @@ MODULES= \
 	injector \
 	processor \
 	server \
+	database-migration \
 
 
 #
@@ -63,7 +64,7 @@ push-images: require-container-registry
 	set -e; \
 	cd $(TOP_DIR); \
 	for i in $(MODULES); do \
-		env CONTAINER=$(CONTAINER) ./scripts/retry.sh push -q $(CONTAINER_REGISTRY)/drogue-doppelgaenger-$${i}:$(IMAGE_TAG) &  \
+		env CONTAINER=$(CONTAINER) ./scripts/bin/retry.sh push -q $(CONTAINER_REGISTRY)/drogue-doppelgaenger-$${i}:$(IMAGE_TAG) &  \
 	done; \
 	wait
 
@@ -87,6 +88,20 @@ kind-load: require-container-registry
 	done
 
 
+#
+# Do a local deploy
+#
+# For a local deploy, we allow using the default container registry of the project
+#
+.PHONY: deploy
+deploy: CONTAINER_REGISTRY ?= "ghcr.io/drogue-iot"
+deploy:
+	test -d deploy/helm/charts || git submodule update --init
+	env ./scripts/drgadm deploy \
+		-s drogueCloudTwin.defaults.images.repository=$(CONTAINER_REGISTRY) \
+		-s drogueCloudTwin.defaults.images.tag=latest $(DEPLOY_ARGS)
+
+
 .PHONY: run-deps
 run-deps:
 	podman-compose -f $(TOP_DIR)/develop/compose.yaml -f $(TOP_DIR)/develop/compose-health.yaml up
@@ -101,3 +116,4 @@ stop-deps:
 
 .PHONY: restart-deps
 restart-deps: stop-deps start-deps
+

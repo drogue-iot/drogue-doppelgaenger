@@ -48,3 +48,17 @@ LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-dopp
 
 COPY --from=builder /output/drogue-doppelgaenger-server /
 ENTRYPOINT [ "/drogue-doppelgaenger-server" ]
+
+
+FROM ghcr.io/drogue-iot/diesel-base:0.2.0 as database-migration
+
+LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
+
+RUN mkdir /migrations
+COPY database-migration/migrations /migrations
+
+ENTRYPOINT ["/usr/local/bin/diesel"]
+
+ENV RUST_LOG "diesel=debug"
+
+CMD ["migration", "run"]
