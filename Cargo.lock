@@ -1150,10 +1150,13 @@ dependencies = [
  "log",
  "openid",
  "postgres-native-tls",
+ "pq-sys",
  "rdkafka",
+ "rdkafka-sys",
  "reqwest",
  "rustls",
  "rustls-native-certs",
+ "sasl2-sys",
  "serde",
  "serde_json",
  "tokio",
@@ -2200,6 +2203,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
+name = "openssl-src"
+version = "111.22.0+1.1.1q"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f31f0d509d1c1ae9cada2f9539ff8f37933831fd5098879e482aa687d659853"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "openssl-sys"
 version = "0.9.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2208,6 +2220,7 @@ dependencies = [
  "autocfg",
  "cc",
  "libc",
+ "openssl-src",
  "pkg-config",
  "vcpkg",
 ]
@@ -2512,6 +2525,7 @@ version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b845d6d8ec554f972a2c5298aad68953fd64e7441e846075450b44656a016d1"
 dependencies = [
+ "pkg-config",
  "vcpkg",
 ]
 
@@ -2872,6 +2886,7 @@ dependencies = [
  "cc",
  "duct",
  "libc",
+ "openssl-sys",
  "pkg-config",
 ]
 
