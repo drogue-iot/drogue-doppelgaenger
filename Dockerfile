@@ -17,6 +17,19 @@ RUN \
 
 RUN ls /output
 
+FROM ghcr.io/drogue-iot/diesel-base:0.2.0 as database-migration
+
+LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
+
+RUN mkdir /migrations
+COPY database-migration/migrations /migrations
+
+ENTRYPOINT ["/usr/local/bin/diesel"]
+
+ENV RUST_LOG "diesel=debug"
+
+CMD ["migration", "run"]
+
 FROM registry.access.redhat.com/ubi9-minimal AS base
 
 RUN microdnf install -y libpq
@@ -49,16 +62,10 @@ LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-dopp
 COPY --from=builder /output/drogue-doppelgaenger-server /
 ENTRYPOINT [ "/drogue-doppelgaenger-server" ]
 
-
-FROM ghcr.io/drogue-iot/diesel-base:0.2.0 as database-migration
+FROM base AS waker
 
 LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
 
-RUN mkdir /migrations
-COPY database-migration/migrations /migrations
+COPY --from=builder /output/drogue-doppelgaenger-waker /
+ENTRYPOINT [ "/drogue-doppelgaenger-waker" ]
 
-ENTRYPOINT ["/usr/local/bin/diesel"]
-
-ENV RUST_LOG "diesel=debug"
-
-CMD ["migration", "run"]

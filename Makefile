@@ -31,6 +31,7 @@ MODULES= \
 	processor \
 	server \
 	database-migration \
+	waker \
 
 
 #

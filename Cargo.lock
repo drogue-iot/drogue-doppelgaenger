@@ -1170,6 +1170,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "drogue-doppelgaenger-waker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "drogue-bazaar",
+ "drogue-doppelgaenger-core",
+ "env_logger",
+ "futures",
+ "log",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "duct"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

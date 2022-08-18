@@ -6,7 +6,8 @@ use crate::{
     service::Id,
 };
 use async_trait::async_trait;
-use std::future::Future;
+use serde::de::DeserializeOwned;
+use std::{fmt::Debug, future::Future};
 
 #[derive(Clone, Debug)]
 pub struct TargetId {
@@ -17,7 +18,7 @@ pub struct TargetId {
 
 #[async_trait]
 pub trait Waker: Sized + Send + Sync {
-    type Config;
+    type Config: Clone + Debug + DeserializeOwned;
 
     fn from_config(config: Self::Config) -> anyhow::Result<Self>;
 
@@ -31,6 +32,7 @@ pub trait Waker: Sized + Send + Sync {
         Fut: Future<Output = anyhow::Result<()>> + Send;
 }
 
+#[derive(Debug, serde::Deserialize)]
 pub struct Config<W: Waker, S: Sink> {
     pub waker: W::Config,
     pub sink: S::Config,
