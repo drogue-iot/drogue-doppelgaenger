@@ -4,7 +4,8 @@ use crate::storage::postgres::Data;
 use crate::waker::TargetId;
 use anyhow::bail;
 use async_trait::async_trait;
-use deadpool_postgres::{Client, Runtime, Transaction};
+use deadpool_postgres::{Client, Transaction};
+use drogue_bazaar::db::postgres;
 use postgres_types::{Json, Type};
 use std::future::Future;
 use std::time::Duration;
@@ -19,7 +20,7 @@ pub struct Config {
     #[serde(with = "humantime_serde")]
     #[serde(default = "default::check_duration")]
     pub check_period: Duration,
-    pub postgres: deadpool_postgres::Config,
+    pub postgres: postgres::Config,
 }
 
 pub mod default {
@@ -41,10 +42,7 @@ impl super::Waker for Waker {
     type Config = Config;
 
     fn from_config(config: Self::Config) -> anyhow::Result<Self> {
-        let pool = config.postgres.create_pool(
-            Some(Runtime::Tokio1),
-            postgres_native_tls::MakeTlsConnector::new(native_tls::TlsConnector::new()?),
-        )?;
+        let pool = config.postgres.create_pool()?;
 
         Ok(Self {
             pool,

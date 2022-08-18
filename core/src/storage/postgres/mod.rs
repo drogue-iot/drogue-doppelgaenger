@@ -10,7 +10,8 @@ use crate::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use deadpool_postgres::{Object, PoolError, Runtime};
+use deadpool_postgres::{Object, PoolError};
+use drogue_bazaar::db::postgres;
 use postgres_types::Type;
 use std::collections::BTreeMap;
 use tokio_postgres::{
@@ -24,7 +25,8 @@ use uuid::Uuid;
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
     pub application: Option<String>,
-    pub postgres: deadpool_postgres::Config,
+    #[serde(flatten)]
+    pub postgres: postgres::Config,
 }
 
 pub struct ThingEntity {
@@ -126,10 +128,7 @@ impl super::Storage for Storage {
     type Error = Error;
 
     fn from_config(config: &Self::Config) -> anyhow::Result<Self> {
-        let pool = config.postgres.create_pool(
-            Some(Runtime::Tokio1),
-            postgres_native_tls::MakeTlsConnector::new(native_tls::TlsConnector::new()?),
-        )?;
+        let pool = config.postgres.create_pool()?;
         let application = config.application.clone();
         Ok(Self { application, pool })
     }
