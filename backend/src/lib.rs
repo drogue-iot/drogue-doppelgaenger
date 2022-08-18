@@ -2,14 +2,19 @@ mod endpoints;
 mod notifier;
 mod utils;
 
-use actix_web::{guard, web, App, HttpServer};
-use anyhow::anyhow;
-use drogue_bazaar::actix::auth::authorization::{AuthZ, AuthorizerExt, NotAnonymous};
+use actix_web::{guard, web};
 use drogue_bazaar::{
-    actix::auth::authentication::AuthN,
-    app::{Startup, StartupExt},
+    actix::{
+        auth::{
+            authentication::AuthN,
+            authorization::{AuthZ, AuthorizerExt, NotAnonymous},
+        },
+        http::{HttpBuilder, HttpConfig},
+    },
+    app::Startup,
     auth::{openid, pat},
     client::ClientConfig,
+    core::config::ConfigFromEnv,
 };
 use drogue_client::user;
 use drogue_doppelgaenger_core::{
@@ -20,8 +25,6 @@ use drogue_doppelgaenger_core::{
     service::{self, Service},
     storage::{postgres, Storage},
 };
-use futures::TryFutureExt;
-use tracing_actix_web::TracingLogger;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> {
@@ -165,16 +168,12 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     let configurator = configure::<_, _, _, _>(startup, config).await?;
 
-    let http = HttpServer::new(move || {
-        App::new()
-            .wrap(TracingLogger::default())
-            .configure(|ctx| configurator(ctx))
-    })
-    .bind("[::]:8080")?
-    .run()
-    .map_err(|err| anyhow!(err));
-
-    startup.spawn(http);
+    HttpBuilder::new(
+        HttpConfig::from_env_prefix("HTTP")?,
+        Some(startup.runtime_config()),
+        configurator,
+    )
+    .start(startup)?;
 
     Ok(())
 }
