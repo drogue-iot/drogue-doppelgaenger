@@ -42,7 +42,16 @@ ifndef CONTAINER_REGISTRY
 	$(error CONTAINER_REGISTRY is undefined)
 endif
 
+#
+# Build, tag, and push all images
+#
+.PHONY: images
+images: require-container-registry build-images tag-images push-images
 
+
+#
+# Build all images, including this binaries
+#
 .PHONY: build-images
 build-images:
 	set -e; \
@@ -51,6 +60,9 @@ build-images:
 	done
 
 
+#
+# Tag all images from that last build
+#
 .PHONY: tag-images
 tag-images: require-container-registry
 	set -e; \
@@ -59,6 +71,9 @@ tag-images: require-container-registry
 	done
 
 
+#
+# Push all tagged images
+#
 .PHONY: tag-images
 push-images: require-container-registry
 	set -e; \
@@ -69,7 +84,7 @@ push-images: require-container-registry
 	wait
 
 #
-# Save all images.
+# Save all images
 #
 .PHONY: save-images
 save-images:
@@ -106,14 +121,16 @@ deploy:
 run-deps:
 	podman-compose -f $(TOP_DIR)/develop/compose.yaml -f $(TOP_DIR)/develop/compose-health.yaml up
 
+
 .PHONY: start-deps
 start-deps:
 	podman-compose -f $(TOP_DIR)/develop/compose.yaml -f $(TOP_DIR)/develop/compose-health.yaml up -d
+
 
 .PHONY: stop-deps
 stop-deps:
 	podman-compose -f $(TOP_DIR)/develop/compose.yaml -f $(TOP_DIR)/develop/compose-health.yaml down
 
+
 .PHONY: restart-deps
 restart-deps: stop-deps start-deps
-
