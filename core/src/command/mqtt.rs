@@ -18,6 +18,7 @@ pub struct Config {
 pub enum Mode {
     Drogue {
         // allow overriding the application
+        #[serde(default)]
         application: Option<String>,
     },
 }
