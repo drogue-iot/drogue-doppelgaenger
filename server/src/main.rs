@@ -4,11 +4,10 @@ mod keycloak;
 extern crate diesel_migrations;
 
 use crate::keycloak::SERVICE_CLIENT_SECRET;
-use drogue_bazaar::auth::openid::{AuthenticatorClientConfig, AuthenticatorGlobalConfig};
 use drogue_bazaar::{
     actix::http::{CorsBuilder, HttpBuilder, HttpConfig},
     app::Startup,
-    auth::openid::AuthenticatorConfig,
+    auth::openid::{AuthenticatorClientConfig, AuthenticatorConfig, AuthenticatorGlobalConfig},
     core::SpawnerExt,
     runtime,
 };
@@ -30,8 +29,7 @@ use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     config::FromClientConfig,
 };
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::runtime::Handle;
 
 embed_migrations!("../database-migration/migrations");
