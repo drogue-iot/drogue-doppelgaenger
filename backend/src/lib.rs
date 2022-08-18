@@ -2,7 +2,8 @@ mod endpoints;
 mod notifier;
 mod utils;
 
-use actix_web::{guard, web};
+use actix_web::web::Json;
+use actix_web::{guard, web, Responder};
 use drogue_bazaar::{
     actix::{
         auth::{
@@ -24,7 +25,9 @@ use drogue_doppelgaenger_core::{
     processor::sink::{self, Sink},
     service::{self, Service},
     storage::{postgres, Storage},
+    PROJECT,
 };
+use serde_json::json;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> {
@@ -44,6 +47,14 @@ pub struct Config<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> {
 #[derive(Clone, Debug)]
 pub struct Instance {
     pub application: Option<String>,
+}
+
+async fn index() -> impl Responder {
+    Json(json!({
+        "ok": true,
+        "name": PROJECT.name,
+        "version": PROJECT.version,
+    }))
 }
 
 pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
@@ -86,6 +97,7 @@ pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
         ctx.app_data(service.clone());
         ctx.app_data(instance.clone());
         ctx.app_data(source.clone());
+        ctx.route("/", web::get().to(index));
         ctx.service(
             web::scope("/api/v1alpha1/things")
                 .wrap(AuthZ::new(NotAnonymous.or_else_allow()))

@@ -16,7 +16,7 @@ pub mod waker;
 
 pub use drogue_bazaar::core::default::is_default;
 
-drogue_bazaar::project!(PROJECT: "Drogue IoT Twin");
+drogue_bazaar::project!(PROJECT: "Drogue IoT Doppelgänger");
 
 use crate::model::Thing;
 
