@@ -4,17 +4,17 @@ use drogue_bazaar::app::{Startup, StartupExt};
 use rumqttc::{AsyncClient, ClientError, Event, EventLoop, Incoming, Outgoing, QoS};
 use tracing::instrument;
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 pub struct Config {
     #[serde(flatten)]
     pub client: MqttClient,
-    #[serde(default)]
-    pub mode: Mode,
+    #[serde(flatten, default)]
+    pub mode: Option<Mode>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[serde(untagged)]
+#[serde(tag = "mode")]
 pub enum Mode {
     Drogue {
         // allow overriding the application
@@ -62,7 +62,10 @@ impl super::CommandSink for CommandSink {
 
         startup.spawn(Self::runner(event_loop));
 
-        Ok(Self { client, mode })
+        Ok(Self {
+            client,
+            mode: mode.unwrap_or_default(),
+        })
     }
 
     #[instrument(skip_all, fields(
@@ -99,5 +102,95 @@ impl CommandSink {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+    use drogue_bazaar::core::config::ConfigFromEnv;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_config() {
+        let mut env = HashMap::<String, String>::new();
+        env.insert("HOST".to_string(), "localhost".to_string());
+        env.insert("PORT".to_string(), "8883".to_string());
+
+        let config = Config::from_set(env).unwrap();
+
+        assert_eq!(
+            Config {
+                client: MqttClient {
+                    host: "localhost".to_string(),
+                    port: 8883,
+                    client_id: None,
+                    username: None,
+                    password: None,
+                    clean_session: true,
+                    disable_tls: false
+                },
+                mode: None,
+            },
+            config
+        );
+    }
+
+    #[test]
+    fn test_config_mode() {
+        let mut env = HashMap::<String, String>::new();
+        env.insert("HOST".to_string(), "localhost".to_string());
+        env.insert("PORT".to_string(), "8883".to_string());
+
+        env.insert("MODE".to_string(), "drogue".to_string());
+
+        let config = Config::from_set(env).unwrap();
+
+        assert_eq!(
+            Config {
+                client: MqttClient {
+                    host: "localhost".to_string(),
+                    port: 8883,
+                    client_id: None,
+                    username: None,
+                    password: None,
+                    clean_session: true,
+                    disable_tls: false
+                },
+                mode: Some(Mode::Drogue { application: None })
+            },
+            config
+        );
+    }
+
+    #[test]
+    fn test_config_mode_options() {
+        let mut env = HashMap::<String, String>::new();
+        env.insert("HOST".to_string(), "localhost".to_string());
+        env.insert("PORT".to_string(), "8883".to_string());
+
+        env.insert("MODE".to_string(), "drogue".to_string());
+        env.insert("APPLICATION".to_string(), "app".to_string());
+
+        let config = Config::from_set(env).unwrap();
+
+        assert_eq!(
+            Config {
+                client: MqttClient {
+                    host: "localhost".to_string(),
+                    port: 8883,
+                    client_id: None,
+                    username: None,
+                    password: None,
+                    clean_session: true,
+                    disable_tls: false
+                },
+                mode: Some(Mode::Drogue {
+                    application: Some("app".to_string())
+                })
+            },
+            config
+        );
     }
 }

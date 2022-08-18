@@ -5,7 +5,7 @@ use rustls::ClientConfig;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 pub struct MqttClient {
     pub host: String,
     pub port: u16,
