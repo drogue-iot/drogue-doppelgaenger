@@ -1,0 +1,29 @@
+
+# Ports might seem a bit off, but they must be in the range of 30000-32767
+
+global:
+  drogueCloud:
+    keycloak:
+      insecure: true
+
+drogueCloudTwin:
+
+  defaults:
+    ingress:
+      className: nginx
+
+  services:
+
+    api:
+      ingress:
+        insecure: true
+        port: 80
+
+    backend:
+      service:
+        insecure: true
+
+    sso:
+      ingress:
+        insecure: true
+        port: 80

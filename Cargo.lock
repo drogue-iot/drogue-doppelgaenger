@@ -925,7 +925,7 @@ checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 [[package]]
 name = "drogue-bazaar"
 version = "0.2.0"
-source = "git+https://github.com/drogue-iot/drogue-bazaar?rev=f77db10ce88b81c084d5109f48a17d3987b7b620#f77db10ce88b81c084d5109f48a17d3987b7b620"
+source = "git+https://github.com/drogue-iot/drogue-bazaar?rev=1a769df7ec04d0b07a7da78f0d91789541bca51b#1a769df7ec04d0b07a7da78f0d91789541bca51b"
 dependencies = [
  "actix-cors",
  "actix-http",
@@ -938,6 +938,8 @@ dependencies = [
  "async-trait",
  "chrono",
  "config",
+ "deadpool",
+ "deadpool-postgres",
  "dotenv",
  "drogue-client",
  "env_logger",
@@ -953,12 +955,14 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-jaeger",
  "pem",
+ "postgres-native-tls",
  "prometheus",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tracing",
  "tracing-actix-web",
  "tracing-log",

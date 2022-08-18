@@ -1,0 +1,23 @@
+# use in combination with the openshift.yaml file
+
+global:
+  drogueCloud:
+    keycloak:
+      insecure: true
+
+drogueCloudTwin:
+
+  services:
+    api:
+      ingress:
+        insecure: true
+        port: 80
+
+    backend:
+      service:
+        insecure: true
+
+    sso:
+      ingress:
+        insecure: true
+        port: 80
