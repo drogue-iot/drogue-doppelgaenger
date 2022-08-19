@@ -24,6 +24,16 @@ pub enum PayloadMapper {
         #[serde(default)]
         add_timestamp: bool,
     },
+    #[serde(alias = "simpleState")]
+    SimpleState,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct SimpleState {
+    #[serde(default)]
+    pub partial: bool,
+    #[serde(default)]
+    pub state: BTreeMap<String, Value>,
 }
 
 impl Default for PayloadMapper {
@@ -44,6 +54,7 @@ impl PayloadMapper {
                 partial,
                 add_timestamp,
             } => self.map_simple(&meta, data, *partial, *add_timestamp),
+            Self::SimpleState => self.map_simple_state(data),
         }
     }
 
@@ -82,6 +93,19 @@ impl PayloadMapper {
                     bail!("Wrong root level value for {self:?} mapper, expected: Object");
                 }
             },
+            (content_type, schema, data) => self.otherwise(content_type, schema, data),
+        }
+    }
+
+    fn map_simple_state(
+        &self,
+        (content_type, schema, data): (Option<String>, Option<Url>, Option<Data>),
+    ) -> anyhow::Result<Message> {
+        match (content_type.as_deref(), schema, data) {
+            (Some("application/json" | "text/json"), _, Some(data)) => {
+                let SimpleState { state, partial } = from_data::<SimpleState>(data)?;
+                Ok(Message::ReportState { state, partial })
+            }
             (content_type, schema, data) => self.otherwise(content_type, schema, data),
         }
     }

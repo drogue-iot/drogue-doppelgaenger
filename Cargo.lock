@@ -925,7 +925,7 @@ checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 [[package]]
 name = "drogue-bazaar"
 version = "0.2.0"
-source = "git+https://github.com/drogue-iot/drogue-bazaar?rev=1a769df7ec04d0b07a7da78f0d91789541bca51b#1a769df7ec04d0b07a7da78f0d91789541bca51b"
+source = "git+https://github.com/drogue-iot/drogue-bazaar?rev=34bc8931b9669e39c52685f2cda2ba9f1b226cb2#34bc8931b9669e39c52685f2cda2ba9f1b226cb2"
 dependencies = [
  "actix-cors",
  "actix-http",
@@ -1017,13 +1017,16 @@ dependencies = [
  "humantime",
  "humantime-serde",
  "log",
+ "openid",
  "serde",
  "serde_json",
+ "serde_yaml 0.9.9",
  "thiserror",
  "time 0.1.44",
  "tokio",
  "tokio-stream",
  "tracing-actix-web",
+ "url",
 ]
 
 [[package]]
@@ -1087,7 +1090,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_yaml 0.8.26",
  "thiserror",
  "time 0.1.44",
  "tokio",
@@ -3108,6 +3111,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f50845f68d5c693aac7d72a25415ddd21cb8182c04eafe447b73af55a05f9e1b"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "sha-1"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3746,6 +3762,12 @@ name = "unicode-width"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ed742d4ea2bd1176e236172c8429aaf54486e7ac098db29ffe6529e0ce50973"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "931179334a56395bcf64ba5e0ff56781381c1a5832178280c7d7f91d1679aeb0"
 
 [[package]]
 name = "untrusted"

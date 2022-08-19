@@ -1,47 +1,55 @@
-use crate::OpenIdClient;
-use actix_web::{web, HttpRequest};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use anyhow::Context;
-use drogue_cloud_service_api::endpoints::Endpoints;
 use serde_json::{json, Value};
-use std::borrow::Cow;
+use url::Url;
 
-const SPEC: &str = include_str!("../api/index.yaml");
+const SPEC: &str = include_str!("../api/openapi.yaml");
 
-pub fn spec(
-    req: HttpRequest,
-    endpoints: &Endpoints,
-    client: web::Data<OpenIdClient>,
-) -> anyhow::Result<Value> {
+#[derive(Clone, Debug)]
+pub struct OpenApiConfig {
+    pub authorization_url: Option<Url>,
+}
+
+pub async fn api(req: HttpRequest, openapi: web::Data<OpenApiConfig>) -> impl Responder {
+    match spec(req, openapi.get_ref()) {
+        Ok(spec) => HttpResponse::Ok().json(spec),
+        Err(err) => {
+            log::warn!("Failed to generate OpenAPI spec: {}", err);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+fn spec(req: HttpRequest, openapi: &OpenApiConfig) -> anyhow::Result<Value> {
+    // load API spec
+
     let mut api: Value = serde_yaml::from_str(SPEC).context("Failed to parse OpenAPI YAML")?;
-
-    let url = endpoints.api.as_ref().map(Cow::from).unwrap_or_else(|| {
-        let ci = req.connection_info();
-        Cow::from(format!("{}://{}", ci.scheme(), ci.host()))
-    });
 
     // server
 
-    api["servers"] = json!([{ "url": url, "description": "Drogue Cloud API" }]);
+    let ci = req.connection_info();
+    let url = format!("{}://{}", ci.scheme(), ci.host());
+    api["servers"] = json!([{ "url": url, "description": "Drogue Doppelgänger API" }]);
 
     // SSO
 
-    let url = client.client.config().authorization_endpoint.clone();
-
-    api["security"] = json!([{"Drogue Cloud SSO": []}]);
-    api["components"]["securitySchemes"] = json!({
-        "Drogue Cloud SSO": {
-            "type": "oauth2",
-            "description": "SSO",
-            "flows": {
-                "implicit": {
-                    "authorizationUrl": url,
-                    "scopes": {
-                        "openid": "OpenID Connect",
+    if let Some(url) = &openapi.authorization_url {
+        api["security"] = json!([{"Drogue Cloud SSO": []}]);
+        api["components"]["securitySchemes"] = json!({
+            "Drogue Cloud SSO": {
+                "type": "oauth2",
+                "description": "SSO",
+                "flows": {
+                    "implicit": {
+                        "authorizationUrl": url.to_string(),
+                        "scopes": {
+                            "openid": "OpenID Connect",
+                        }
                     }
                 }
-            }
-        },
-    });
+            },
+        });
+    }
 
     // render
 

@@ -218,6 +218,7 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
         listener: server.notifier_source,
         oauth,
         user_auth: None,
+        openapi_oauth_client: None,
     };
 
     let configurator = drogue_doppelgaenger_backend::configure(startup, backend).await?;

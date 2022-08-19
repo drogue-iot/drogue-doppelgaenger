@@ -1,9 +1,16 @@
+mod api;
 mod endpoints;
 mod notifier;
 mod utils;
 
-use actix_web::web::Json;
-use actix_web::{guard, web, Responder};
+use crate::api::{api, OpenApiConfig};
+use ::openid::Configurable;
+use actix_web::{
+    guard,
+    web::{self, Json},
+    Responder,
+};
+use anyhow::anyhow;
 use drogue_bazaar::{
     actix::{
         auth::{
@@ -42,6 +49,9 @@ pub struct Config<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> {
     pub user_auth: Option<ClientConfig>,
 
     pub oauth: openid::AuthenticatorConfig,
+
+    #[serde(default)]
+    pub openapi_oauth_client: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +88,22 @@ pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
         None
     };
 
+    let authorization_url = match config.openapi_oauth_client {
+        Some(client) => {
+            let auth = authenticator.as_ref().ok_or_else(|| {
+                anyhow!("OpenAPI OAuth is configured, but no OAuth configuration is present")
+            })?;
+            let client = auth.client_by_name(&client).ok_or_else(|| {
+                anyhow!(
+                    "OpenAPI OAuth is configured, but client '{}' could not be found",
+                    client
+                )
+            })?;
+            Some(client.provider.config().authorization_endpoint.clone())
+        }
+        None => None,
+    };
+
     if log::log_enabled!(log::Level::Info) {
         log::info!(
             "Authentication: {:?}",
@@ -97,7 +123,13 @@ pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
         ctx.app_data(service.clone());
         ctx.app_data(instance.clone());
         ctx.app_data(source.clone());
+        ctx.app_data(OpenApiConfig {
+            authorization_url: authorization_url.clone(),
+        });
+
         ctx.route("/", web::get().to(index));
+        ctx.route("/api", web::get().to(api));
+
         ctx.service(
             web::scope("/api/v1alpha1/things")
                 .wrap(AuthZ::new(NotAnonymous.or_else_allow()))
