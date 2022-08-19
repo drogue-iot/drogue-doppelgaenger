@@ -302,7 +302,7 @@ impl InfallibleUpdater for SyntheticStateUpdater {
 }
 
 /// A more flexible update struct for [`DesiredFeature`].
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DesiredStateUpdate {
     #[serde(default)]
@@ -311,6 +311,7 @@ pub struct DesiredStateUpdate {
     pub valid_until: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "humantime_serde")]
+    #[schemars(schema_with = "crate::schemars::humantime")]
     pub valid_for: Option<Duration>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]

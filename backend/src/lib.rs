@@ -114,6 +114,8 @@ pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
         );
     }
 
+    let openapi = web::Data::new(OpenApiConfig { authorization_url });
+
     Ok(move |ctx: &mut web::ServiceConfig| {
         let auth = AuthN::from((
             authenticator.clone(),
@@ -123,9 +125,7 @@ pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
         ctx.app_data(service.clone());
         ctx.app_data(instance.clone());
         ctx.app_data(source.clone());
-        ctx.app_data(OpenApiConfig {
-            authorization_url: authorization_url.clone(),
-        });
+        ctx.app_data(openapi.clone());
 
         ctx.route("/", web::get().to(index));
         ctx.route("/api", web::get().to(api));
