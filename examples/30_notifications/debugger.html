@@ -87,103 +87,125 @@
 
 <script src="thing.js"></script>
 
-<script defer>
+<script>
+    function init(backend) {
+        const keycloak = new Keycloak(backend.keycloak);
 
-    const keycloak = new Keycloak({
-        url: 'http://localhost:8081',
-        realm: 'doppelgaenger',
-        clientId: 'api',
-    });
+        const api = new Api(backend.api, "default", {
+            tokenProvider: () => keycloak
+                .updateToken(30)
+                .then(() => keycloak.token)
+        });
+        let selectedThing = null;
+        let showDesired = false;
 
-    const api = new Api("http://localhost:8080", "default", {
-        tokenProvider: () => keycloak
-            .updateToken(30)
-            .then(() => keycloak.token)
-    });
-    let selectedThing = null;
-    let showDesired = false;
+        $('#showDesiredCheck').change(function () {
+            console.log(this.checked);
+            setDesired(this.checked);
+        });
 
-    $('#showDesiredCheck').change(function () {
-        console.log(this.checked);
-        setDesired(this.checked);
-    });
-
-    function setDesired(flag) {
-        showDesired = flag;
-        if (selectedThing) {
-            selectedThing.options.showDesired = showDesired;
-            selectedThing.render();
-        }
-    }
-
-    function showThing(thing) {
-
-        if (thing === "") {
-            return;
+        function setDesired(flag) {
+            showDesired = flag;
+            if (selectedThing) {
+                selectedThing.options.showDesired = showDesired;
+                selectedThing.render();
+            }
         }
 
-        let card = $('#selected-thing');
-        card.find('.card-header .drogue-device-name').html($(`<code>${thing}</code>`));
+        function showThing(thing) {
 
-        if (selectedThing) {
-            selectedThing.dispose();
-            selectedThing.thing.dispose();
-            selectedThing = null;
+            if (thing === "") {
+                return;
+            }
+
+            let card = $('#selected-thing');
+            card.find('.card-header .drogue-device-name').html($(`<code>${thing}</code>`));
+
+            if (selectedThing) {
+                selectedThing.dispose();
+                selectedThing.thing.dispose();
+                selectedThing = null;
+            }
+
+            selectedThing = new ThingCard(new Thing(api, thing), card, {
+                showTimestamps: true,
+                showDesired,
+                controlDesired: true,
+                refClicked: (ref) => {
+                    showThing(ref);
+                }
+            });
         }
 
-        selectedThing = new ThingCard(new Thing(api, thing), card, {
-            showTimestamps: true,
-            showDesired,
-            controlDesired: true,
-            refClicked: (ref) => {
-                showThing(ref);
+        $('#btn-lookup').on('click', e => {
+            showThing($('#lookup-thing-name').val());
+            $(e).blur();
+        });
+        $('#form-lookup').on('submit', e => {
+            e.preventDefault();
+            const ele = $('#lookup-thing-name');
+            showThing(ele.val());
+            ele.blur();
+        });
+        $('#lookup-thing-name').on('keydown', e => {
+            e.stopPropagation();
+        });
+        $('body').on('keydown', e => {
+            if (e.key === '/') {
+                e.preventDefault();
+                $('#lookup-thing-name').focus().val("");
             }
         });
-    }
 
-    $('#btn-lookup').on('click', e => {
-        showThing($('#lookup-thing-name').val());
-        $(e).blur();
-    });
-    $('#form-lookup').on('submit', e => {
-        e.preventDefault();
-        const ele = $('#lookup-thing-name');
-        showThing(ele.val());
-        ele.blur();
-    });
-    $('#lookup-thing-name').on('keydown', e => {
-        e.stopPropagation();
-    });
-    $('body').on('keydown', e => {
-        if (e.key === '/') {
-            e.preventDefault();
-            $('#lookup-thing-name').focus().val("");
+        function initUi() {
+            const selected = window.location.hash;
+            console.log("Pre-selected: ", selected);
+            if (selected !== undefined && selected !== "") {
+                showThing(selected.substring(1));
+            } else {
+                showThing("/");
+            }
         }
-    });
 
-    function initUi() {
-        const selected = window.location.hash;
-        console.log("Pre-selected: ", selected);
-        if (selected !== undefined && selected !== "") {
-            showThing(selected.substring(1));
-        } else {
-            showThing("/");
+        function initKeycloak() {
+            keycloak.init({onLoad: 'login-required'})
+                .then((authenticated) => {
+                    if (authenticated) {
+                        initUi(keycloak);
+                    }
+                })
+                .catch(() => {
+                    console.error("Failed to initialize")
+                });
         }
-    }
 
-    function initKeycloak() {
-        keycloak.init({onLoad: 'login-required'})
-            .then((authenticated) => {
-                if (authenticated) {
-                    initUi(keycloak);
+        initKeycloak();
+    }
+</script>
+
+<script defer>
+
+    fetch('/endpoints/backend.json')
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error("Failed to load backend information");
+            }
+            return response.json();
+        })
+        .then((backend)=> {
+            init(backend);
+        })
+        .catch((error) => {
+            console.error("Failed to load backend information: ", error);
+            init({
+                api: "http://localhost:8080",
+                keycloak: {
+                    url: 'http://localhost:8081',
+                    realm: 'doppelgaenger',
+                    clientId: 'api',
                 }
-            })
-            .catch(() => {
-                console.error("Failed to initialize")
             });
-    }
-
-    initKeycloak();
+        });
 
 </script>
 

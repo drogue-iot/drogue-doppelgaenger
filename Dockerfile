@@ -69,3 +69,20 @@ LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-dopp
 COPY --from=builder /output/drogue-doppelgaenger-waker /
 ENTRYPOINT [ "/drogue-doppelgaenger-waker" ]
 
+FROM ghcr.io/drogue-iot/frontend-base:0.2.0 as debugger
+
+LABEL org.opencontainers.image.source="https://github.com/drogue-iot/drogue-doppelgaenger"
+
+RUN true \
+    && mkdir /public \
+    && mkdir /endpoints
+
+COPY debugger/nginx.conf /etc/nginx/nginx.conf
+COPY debugger/nginx.sh /nginx.sh
+
+RUN chmod a+x /nginx.sh
+CMD ["/nginx.sh"]
+
+# copy debugger files
+COPY examples/30_notifications/debugger.html /public/index.html
+COPY examples/30_notifications/thing.js /public/thing.js

@@ -32,6 +32,7 @@ MODULES= \
 	server \
 	database-migration \
 	waker \
+	debugger \
 
 
 #
