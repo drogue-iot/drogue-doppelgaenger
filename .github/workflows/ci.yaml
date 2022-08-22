@@ -400,6 +400,7 @@ jobs:
 
       - name: Tag and push images
         run: |
+          make tag-images "IMAGE_TAG=$VERSION"
           make push-images "IMAGE_TAG=$VERSION"
           sleep 10 # delay a bit for API rate limiting issues
 
