@@ -248,7 +248,7 @@ jobs:
           tar xvf postgresql-11.13.tar.gz
           cd postgresql-11.13
           ./configure --prefix=$PWD/../libpq
-          make
+          make -j
           make install
           cd ..
 
