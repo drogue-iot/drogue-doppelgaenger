@@ -8,12 +8,14 @@ global:
 
 drogueCloudTwin:
 
-  services:
+  api:
+    ingress:
+      insecure: true
+      port: 80
+    service:
+      insecure: true
 
-    api:
-      ingress:
-        insecure: true
-        port: 80
+  services:
 
     backend:
       service:
@@ -23,3 +25,10 @@ drogueCloudTwin:
       ingress:
         insecure: true
         port: 80
+
+    swaggerUi:
+      ingress:
+        insecure: true
+        port: 80
+      service:
+        insecure: true

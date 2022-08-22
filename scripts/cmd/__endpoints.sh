@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
 
-# FIXME: find a way to detect endpoints
-
-# API_URL="$(get_env deploy/console-backend endpoint ENDPOINTS__API_URL)"
-# SSO_URL="$(get_env deploy/console-backend endpoint SSO_URL)"
+API_URL="$(get_cm_entry drogue-doppelgaenger-endpoints api-url)"
+SSO_URL="$(get_cm_entry drogue-doppelgaenger-endpoints sso-url)"

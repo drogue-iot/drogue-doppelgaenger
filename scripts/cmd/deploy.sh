@@ -60,9 +60,6 @@ while getopts mhkeMp:c:n:d:s:S:t:Tf: FLAG; do
     d)
         DOMAIN="$OPTARG"
         ;;
-    m)
-        MINIMIZE=true
-        ;;
     p)
         HELM_PROFILE="$OPTARG"
         ;;
@@ -86,8 +83,6 @@ while getopts mhkeMp:c:n:d:s:S:t:Tf: FLAG; do
 done
 
 set -e
-
-echo "Minimize: $MINIMIZE"
 
 #
 # deploy defaults
@@ -123,7 +118,6 @@ check_cluster_connection
 if ! kubectl get ns "$DROGUE_NS" >/dev/null 2>&1; then
     progress -n "🆕 Creating namespace ($DROGUE_NS) ... "
     kubectl create namespace "$DROGUE_NS"
-    kubectl label namespace "$DROGUE_NS" bindings.knative.dev/include=true
     progress "done!"
 fi
 
@@ -200,29 +194,5 @@ progress "done!"
 progress "📠 Adding cover sheet to TPS report ... done!"
 progress "🥳 Deployment ready!"
 
-progress
-progress "To get started, you can:"
-progress
-progress "  * Navigate to the web console:"
-progress "      URL:      ${CONSOLE_URL}"
-progress "      User:     admin"
-progress "      Password: admin123456"
-progress
-progress "  * Log in using 'drg':"
-progress "      * Get it from: https://github.com/drogue-iot/drg/releases/latest"
-progress "      * Run:         drg login ${API_URL}"
-progress
-progress "  * Execute (to see more examples): "
-
-ENVS=""
-
-if ! is_default_cluster; then
-    ENVS+="CLUSTER=$CLUSTER"
-fi
-
-if [[ -n "$ENVS" ]]; then
-    ENVS="env $ENVS "
-fi
-
-progress "      ${ENVS} $BASEDIR/drgadm examples"
-progress
+progress "  API:             ${API_URL}"
+progress "  Single Sign On:  ${SSO_URL}"

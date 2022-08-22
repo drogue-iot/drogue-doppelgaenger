@@ -19,3 +19,12 @@ function get_env() {
 
     kubectl -n "$DROGUE_NS" get $resource -o jsonpath="{.spec.template.spec.containers[?(@.name==\"$container\")].env[?(@.name==\"$name\")].value}"
 }
+
+function get_cm_entry() {
+    local resource="$1"
+    shift
+    local name="$1"
+    shift
+
+    kubectl -n "$DROGUE_NS" get cm $resource -o jsonpath="{.data['$name']}"
+}
