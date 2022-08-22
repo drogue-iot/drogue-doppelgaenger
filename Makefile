@@ -12,6 +12,7 @@ ifeq (, $(shell which podman 2>/dev/null))
 	CONTAINER ?= docker
 else
 	CONTAINER ?= podman
+	CONTAINER_SAVE_OPTS ?= --multi-image-archive
 endif
 
 
@@ -92,7 +93,7 @@ push-images: require-container-registry
 save-images:
 	mkdir -p "$(TOP_DIR)/build/images"
 	rm -Rf "$(TOP_DIR)/build/images/all.tar"
-	$(CONTAINER) save -o "$(TOP_DIR)/build/images/all.tar" $(addprefix localhost/drogue-doppelgaenger-, $(addsuffix :latest, $(MODULES)))
+	$(CONTAINER) save $(CONTAINER_SAVE_OPTS) -o "$(TOP_DIR)/build/images/all.tar" $(addprefix localhost/drogue-doppelgaenger-, $(addsuffix :latest, $(MODULES)))
 
 
 #
