@@ -22,12 +22,9 @@ Options:
   -S <key>=<value>   Set a Helm option (as string), can be repeated:
                        -S foo=bar -S bar=baz -S foo.bar=baz
   -k                 Don't install dependencies
-  -e                 Don't install examples
   -f <vales.yaml>    Add a Helm values files
   -p <profile>       Enable Helm profile (adds 'deploy/profiles/<profile>.yaml')
   -t <timeout>       Helm installation timeout (default: 15m)
-  -T                 Deploy the digital twin feature
-  -M                 Deploy metrics
   -h                 Show this help
 
 EOF

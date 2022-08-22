@@ -259,3 +259,78 @@ jobs:
           path: target/release/drogue-doppelgaenger-server
           if-no-files-found: error
 
+
+  deploy:
+    name: deploy on kind
+    runs-on: ubuntu-22.04
+    needs: [prepare, build]
+    if: needs.prepare.outputs.do-build == 'true'
+    env:
+      CLUSTER: "kind"
+
+    steps:
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: ${{ env.VERSION_HELM }}
+
+      - name: Fetch container images
+        uses: actions/download-artifact@v2
+        with:
+          name: container-images
+
+      - name: Create k8s kind Cluster
+        uses: helm/kind-action@v1.3.0
+        with:
+          wait: 300s
+          cluster_name: kind
+          config: deploy/kind/cluster-config.yaml
+          version: v0.12.0
+
+      - name: Load images in docker
+        run: docker load -i all.tar
+
+      - name: Tag images
+        run: |
+          make tag-images CONTAINER_REGISTRY=dev.local IMAGE_TAG=${{ github.sha }}
+
+      - name: Load images in kind
+        run: make kind-load CONTAINER_REGISTRY=dev.local IMAGE_TAG=${{ github.sha }}
+
+      - name: Delete loaded images
+        run: rm all.tar
+
+      - name: List all images in kind
+        run: docker exec -t kind-control-plane crictl images
+
+      - name: Deploy
+        env:
+          DEBUG: "true"
+        run: |
+          ./scripts/drgadm deploy \
+            -s drogueCloudTwin.defaults.images.repository=dev.local \
+            -S drogueCloudTwin.defaults.images.tag=${{ github.sha }} \
+            -s drogueCloudTwin.defaults.images.pullPolicy=Never
+        timeout-minutes: 30
+
+      - name: Collect logs
+        if: failure()
+        run: |
+          mkdir -p /tmp/logs/kind
+          kind export logs /tmp/logs/kind
+          mkdir -p /tmp/logs/ns
+          for ns in kafka drogue-doppelgaenger; do
+            ./.github/scripts/collect_logs.sh /tmp/logs/ns/$ns $ns
+          done
+
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v2
+        with:
+          name: deploy-logs
+          path: /tmp/logs
