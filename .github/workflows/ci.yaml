@@ -396,7 +396,7 @@ jobs:
           podman images
 
       - name: Login to github container repository
-        run: echo "${{ secrets.GHCR_PAT }}" | podman login https://ghcr.io -u ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.GHCR_PAT }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Tag and push images
         run: |
