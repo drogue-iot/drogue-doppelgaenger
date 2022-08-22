@@ -341,3 +341,106 @@ jobs:
         with:
           name: deploy-logs
           path: /tmp/logs
+
+  publish:
+    needs: [prepare, deploy, test, server-linux, server-macos]
+    if: (needs.prepare.outputs.do-build == 'true') && (needs.prepare.outputs.do-publish == 'true')
+
+    runs-on: ubuntu-22.04
+
+    env:
+      CONTAINER_REGISTRY: ghcr.io/${{ github.repository_owner }}
+      VERSION: ${{needs.prepare.outputs.version}}
+
+    steps:
+
+      - name: Dump state
+        run: |
+          echo "Tag/version: ${VERSION} / ${{needs.prepare.outputs.version}}"
+          echo "Should we publish artifacts? - do-publish = ${{needs.prepare.outputs.do-publish}}"
+          echo "Release? - release = ${{needs.prepare.outputs.release}}"
+          echo "Pre-release? - prerelease = ${{needs.prepare.outputs.prerelease}}"
+
+      # Start the actual build
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Fetch container images
+        uses: actions/download-artifact@v2
+        with:
+          name: container-images
+
+      - name: Fetch static server binary (linux-amd64)
+        uses: actions/download-artifact@v2
+        with:
+          name: drogue-doppelgaenger-server-linux-amd64
+          path: drogue-doppelgaenger-server-linux-amd64
+
+      - name: Fetch static server binary (macos-amd64)
+        uses: actions/download-artifact@v2
+        with:
+          name: drogue-doppelgaenger-server-macos-amd64
+          path: drogue-doppelgaenger-server-macos-amd64
+
+      - name: Rename static server binaries
+        run: |
+          mkdir server-binaries
+          mv drogue-doppelgaenger-server-linux-amd64/drogue-doppelgaenger-server server-binaries/drogue-doppelgaenger-server-linux-amd64
+          mv drogue-doppelgaenger-server-macos-amd64/drogue-doppelgaenger-server server-binaries/drogue-doppelgaenger-server-macos-amd64
+
+      - name: Load images in podman
+        run: |
+          podman load -i all.tar
+          podman images
+
+      - name: Login to github container repository
+        run: echo "${{ secrets.GHCR_PAT }}" | podman login https://ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Tag and push images
+        run: |
+          make push-images "IMAGE_TAG=$VERSION"
+          sleep 10 # delay a bit for API rate limiting issues
+
+      - name: Install convco
+        if: needs.prepare.outputs.release
+        run: |
+          curl -fsSL -o convco.zip https://github.com/convco/convco/releases/download/v0.3.11/convco-ubuntu.zip
+          unzip convco.zip
+          install convco /usr/local/bin
+
+      - name: Generate changelog
+        if: needs.prepare.outputs.release
+        run: |
+          convco changelog --max-versions=1 > /tmp/changelog.md
+
+      - name: Create Release
+        if: needs.prepare.outputs.release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.prepare.outputs.version }}
+        run: |
+          OPTS=""
+          if [[ "${{ needs.prepare.outputs.prerelease }}" == "true" ]]; then
+            OPTS = "${OPTS} -p"
+          fi
+          gh release create $OPTS -d --title "${{ needs.prepare.outputs.version }}" -F /tmp/changelog.md $TAG 
+
+      - name: Upload Release Assets
+        if: needs.prepare.outputs.release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.prepare.outputs.version }}
+        run: |
+          # add static server binaries
+          gh release upload $TAG $(find server-binaries -type f -printf "-a %p ") 
+
+      - name: Remove draft status
+        if: needs.prepare.outputs.release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.prepare.outputs.version }}
+        run: |
+          # finally, remove the draft status
+          gh release edit $TAG --draft=false
