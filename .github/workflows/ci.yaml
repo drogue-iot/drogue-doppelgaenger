@@ -267,6 +267,8 @@ jobs:
     if: needs.prepare.outputs.do-build == 'true'
     env:
       CLUSTER: "kind"
+      # both podman or docker works, but we must use it consistently, and kind uses docker
+      CONTAINER: "docker"
 
     steps:
 
@@ -292,8 +294,8 @@ jobs:
           config: deploy/kind/cluster-config.yaml
           version: v0.12.0
 
-      - name: Load images in docker
-        run: docker load -i all.tar
+      - name: Load images
+        run: ${CONTAINER} load -i all.tar
 
       - name: Tag images
         run: |
@@ -306,7 +308,7 @@ jobs:
         run: rm all.tar
 
       - name: List all images in kind
-        run: docker exec -t kind-control-plane crictl images
+        run: ${CONTAINER} exec -t kind-control-plane crictl images
 
       - name: Deploy
         env:
