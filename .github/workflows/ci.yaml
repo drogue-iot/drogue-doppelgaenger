@@ -435,7 +435,7 @@ jobs:
           TAG: v${{ needs.prepare.outputs.version }}
         run: |
           # add static server binaries
-          gh release upload $TAG $(find server-binaries -type f -printf "-a %p ") 
+          gh release upload $TAG $(find server-binaries -type f) 
 
       - name: Remove draft status
         if: needs.prepare.outputs.release
