@@ -424,7 +424,7 @@ jobs:
         run: |
           OPTS=""
           if [[ "${{ needs.prepare.outputs.prerelease }}" == "true" ]]; then
-            OPTS = "${OPTS} -p"
+            OPTS="${OPTS} -p"
           fi
           gh release create $OPTS -d --title "${{ needs.prepare.outputs.version }}" -F /tmp/changelog.md $TAG 
 
