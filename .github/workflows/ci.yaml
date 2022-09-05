@@ -428,6 +428,13 @@ jobs:
           fi
           gh release create $OPTS -d --title "${{ needs.prepare.outputs.version }}" -F /tmp/changelog.md $TAG 
 
+      - name: List Releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # list releases
+          gh release list
+
       - name: Upload Release Assets
         if: needs.prepare.outputs.release
         env:
