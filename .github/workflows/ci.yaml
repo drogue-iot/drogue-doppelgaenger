@@ -426,29 +426,4 @@ jobs:
           if [[ "${{ needs.prepare.outputs.prerelease }}" == "true" ]]; then
             OPTS="${OPTS} -p"
           fi
-          gh release create $OPTS -d --title "${{ needs.prepare.outputs.version }}" -F /tmp/changelog.md $TAG 
-
-      - name: List Releases
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # list releases
-          gh release list
-
-      - name: Upload Release Assets
-        if: needs.prepare.outputs.release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ needs.prepare.outputs.version }}
-        run: |
-          # add static server binaries
-          gh release upload $TAG $(find server-binaries -type f) 
-
-      - name: Remove draft status
-        if: needs.prepare.outputs.release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ needs.prepare.outputs.version }}
-        run: |
-          # finally, remove the draft status
-          gh release edit $TAG --draft=false
+          gh release create $OPTS --title "${{ needs.prepare.outputs.version }}" -F /tmp/changelog.md $TAG $(find server-binaries -type f)
