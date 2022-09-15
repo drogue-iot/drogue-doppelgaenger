@@ -22,6 +22,8 @@ paths:
       responses:
         '204':
           description: A new thing has been created.
+        '409':
+          description: A thing with this name already exists.
         '500':
           description: An internal error occurred.
           content:
