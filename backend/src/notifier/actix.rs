@@ -5,8 +5,8 @@ use actix::{
     WrapFuture,
 };
 use actix_web_actors::ws::{self, CloseCode, CloseReason};
-use drogue_doppelgaenger_core::command::CommandSink;
 use drogue_doppelgaenger_core::{
+    command::CommandSink,
     listener::{KafkaSource, Message},
     notifier::Notifier,
     processor::{self, sink::Sink, Event},
