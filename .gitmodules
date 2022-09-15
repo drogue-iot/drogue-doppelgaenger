@@ -1,3 +1,5 @@
 [submodule "helm-charts"]
 	path = deploy/helm
-	url = git@github.com:drogue-iot/drogue-cloud-helm-charts.git
+	url = https://github.com/drogue-iot/drogue-cloud-helm-charts
+[submodule "deploy/helm"]
+	url = https://github.com/drogue-iot/drogue-cloud-helm-charts
