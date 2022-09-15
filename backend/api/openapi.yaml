@@ -20,7 +20,7 @@ paths:
             schema:
               $ref: '#/components/schemas/Thing'
       responses:
-        '204':
+        '201':
           description: A new thing has been created.
         '409':
           description: A thing with this name already exists.

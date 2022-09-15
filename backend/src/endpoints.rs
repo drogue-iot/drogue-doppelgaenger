@@ -45,7 +45,7 @@ pub async fn things_create<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
         .create(payload.into_inner().strip_internal())
         .await?;
 
-    Ok(HttpResponse::NoContent().json(json!({})))
+    Ok(HttpResponse::Created().json(json!({})))
 }
 
 pub async fn things_update<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
