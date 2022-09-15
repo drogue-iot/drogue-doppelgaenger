@@ -1,0 +1,18 @@
+[package]
+name = "drogue-doppelgaenger-model"
+description = "Drogue IoT Doppelgänger Model"
+version = "0.2.0"
+authors = ["Jens Reimann <jreimann@redhat.com>"]
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+base64 = "0.13"
+base64-serde = "0.6"
+chrono = { version = "0.4", features = ["serde"] }
+humantime = "2"
+humantime-serde = "1"
+indexmap = "1.9"
+schemars = { version = "0.8", features = ["bytes", "chrono", "indexmap"] }
+serde = { version = "1", features = ["rc"] }
+serde_json = "1"

@@ -9,12 +9,12 @@ pub mod model;
 mod mqtt;
 pub mod notifier;
 pub mod processor;
-mod schemars;
 pub mod service;
 pub mod storage;
 pub mod waker;
 
 pub use drogue_bazaar::core::default::is_default;
+use drogue_doppelgaenger_model::InternalState;
 
 drogue_bazaar::project!(PROJECT: "Drogue IoT Doppelgänger");
 
@@ -28,8 +28,8 @@ pub struct Preconditions<'o> {
     pub uid: Option<&'o str>,
 }
 
-impl<'o> From<&'o Thing> for Preconditions<'o> {
-    fn from(thing: &'o Thing) -> Self {
+impl<'o, I: InternalState> From<&'o Thing<I>> for Preconditions<'o> {
+    fn from(thing: &'o Thing<I>) -> Self {
         Self {
             resource_version: thing.metadata.resource_version.as_deref(),
             uid: thing.metadata.uid.as_deref(),
@@ -38,7 +38,7 @@ impl<'o> From<&'o Thing> for Preconditions<'o> {
 }
 
 impl Preconditions<'_> {
-    pub fn matches(&self, thing: &Thing) -> bool {
+    pub fn matches<I: InternalState>(&self, thing: &Thing<I>) -> bool {
         if let Some(resource_version) = self.resource_version {
             if Some(resource_version) != thing.metadata.resource_version.as_deref() {
                 return false;

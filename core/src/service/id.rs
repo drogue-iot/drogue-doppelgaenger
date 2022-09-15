@@ -1,3 +1,5 @@
+use crate::model::Thing;
+use drogue_doppelgaenger_model::InternalState;
 use std::fmt::{Display, Formatter};
 
 #[derive(
@@ -14,6 +16,10 @@ impl Id {
             application: application.into(),
             thing: thing.into(),
         }
+    }
+
+    pub fn make_thing<I: InternalState>(&self) -> Thing<I> {
+        Thing::new(&self.application, &self.thing)
     }
 }
 

@@ -6,13 +6,15 @@ pub use error::*;
 pub use id::Id;
 pub use updater::*;
 
-use crate::command::CommandSink;
-use crate::machine::{DeletionOutcome, Machine, OutboxMessage, Outcome};
-use crate::model::{Thing, WakerExt, WakerReason};
-use crate::notifier::Notifier;
-use crate::processor::{sink::Sink, Event};
-use crate::storage::{self, Storage};
-use crate::Preconditions;
+use crate::{
+    command::CommandSink,
+    machine::{DeletionOutcome, Machine, OutboxMessage, Outcome},
+    model::{Internal, InternalThingExt, Thing, WakerExt, WakerReason},
+    notifier::Notifier,
+    processor::{sink::Sink, Event},
+    storage::{self, Storage},
+    Preconditions,
+};
 use chrono::{Duration, Utc};
 use drogue_bazaar::app::Startup;
 use lazy_static::lazy_static;
@@ -107,7 +109,10 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
     }
 
     #[instrument(skip_all, err)]
-    pub async fn create(&self, thing: Thing) -> Result<Thing, Error<St, No, Cmd>> {
+    pub async fn create(
+        &self,
+        thing: Thing<Internal>,
+    ) -> Result<Thing<Internal>, Error<St, No, Cmd>> {
         let Outcome {
             mut new_thing,
             outbox,
@@ -151,7 +156,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
     }
 
     #[instrument(skip(self), err)]
-    pub async fn get(&self, id: &Id) -> Result<Option<Thing>, Error<St, No, Cmd>> {
+    pub async fn get(&self, id: &Id) -> Result<Option<Thing<Internal>>, Error<St, No, Cmd>> {
         self.storage
             .get(&id.application, &id.thing)
             .await
@@ -249,7 +254,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         id: &Id,
         updater: &U,
         opts: &UpdateOptions,
-    ) -> Result<Thing, Error<St, No, Cmd>>
+    ) -> Result<Thing<Internal>, Error<St, No, Cmd>>
     where
         U: Updater,
     {
@@ -350,7 +355,7 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
     }
 
     /// Add new, scheduled, messages to the outbox, and return the entries to send out.
-    fn add_outbox(thing: &mut Thing, outbox: Vec<OutboxMessage>) {
+    fn add_outbox(thing: &mut Thing<Internal>, outbox: Vec<OutboxMessage>) {
         // get internal section
 
         let internal = {
@@ -395,7 +400,10 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
         name=new_thing.metadata.name,
         uid=new_thing.metadata.uid,
     ), err)]
-    async fn send_and_ack(&self, mut new_thing: Thing) -> Result<Thing, Error<St, No, Cmd>> {
+    async fn send_and_ack(
+        &self,
+        mut new_thing: Thing<Internal>,
+    ) -> Result<Thing<Internal>, Error<St, No, Cmd>> {
         let outbox = if let Some(outbox) = new_thing.internal.as_ref().map(|i| &i.outbox) {
             outbox
         } else {
@@ -468,9 +476,9 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
     ), err)]
     async fn check_unprocessed_events(
         &self,
-        mut current_thing: Thing,
+        mut current_thing: Thing<Internal>,
         ignore_unclean_inbox: bool,
-    ) -> Result<Thing, Error<St, No, Cmd>> {
+    ) -> Result<Thing<Internal>, Error<St, No, Cmd>> {
         // we keep looping, until either we:
         // 1) Have a clean inbox
         // 2) Find out we can't process any more events
@@ -501,8 +509,8 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
     #[instrument(skip_all, err)]
     async fn prepare_outbox(
         &self,
-        mut thing: Thing,
-    ) -> Result<(Thing, OutboxState), Error<St, No, Cmd>> {
+        mut thing: Thing<Internal>,
+    ) -> Result<(Thing<Internal>, OutboxState), Error<St, No, Cmd>> {
         let internal = match &mut thing.internal {
             None => return Ok((thing, OutboxState::Clean)),
             Some(internal) if internal.outbox.is_empty() => return Ok((thing, OutboxState::Clean)),

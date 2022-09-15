@@ -10,7 +10,6 @@ use drogue_bazaar::auth::UserInformation;
 use drogue_doppelgaenger_core::{
     command::CommandSink,
     listener::KafkaSource,
-    model::{Reconciliation, SyntheticType, Thing},
     notifier::Notifier,
     processor::{sink::Sink, SetDesiredValue},
     service::{
@@ -20,6 +19,7 @@ use drogue_doppelgaenger_core::{
     },
     storage::Storage,
 };
+use drogue_doppelgaenger_model::{Reconciliation, SyntheticType, Thing};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -41,7 +41,9 @@ pub async fn things_create<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     service: web::Data<Service<S, N, Si, Cmd>>,
     payload: web::Json<Thing>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    service.create(payload.into_inner()).await?;
+    service
+        .create(payload.into_inner().strip_internal())
+        .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))
 }
@@ -55,7 +57,7 @@ pub async fn things_update<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     let payload = payload.into_inner();
 
     service
-        .update(&Id { application, thing }, &payload, &OPTS)
+        .update(&Id { application, thing }, &payload.strip_internal(), &OPTS)
         .await?;
 
     Ok(HttpResponse::NoContent().json(json!({})))

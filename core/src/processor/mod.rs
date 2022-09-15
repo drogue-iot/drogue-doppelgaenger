@@ -3,7 +3,7 @@ pub mod source;
 
 use crate::{
     command::CommandSink,
-    model::{Reconciliation, Thing, WakerReason},
+    model::{Internal, Reconciliation, Thing, WakerReason},
     notifier::Notifier,
     processor::{sink::Sink, source::Source},
     service::{
@@ -112,7 +112,7 @@ pub struct ThingTemplate {
 }
 
 impl InfallibleUpdater for ThingTemplate {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         thing
             .reconciliation
             .changed
@@ -186,7 +186,7 @@ impl From<ReportStateBuilder> for ReportedStateUpdater {
 }
 
 impl InfallibleUpdater for ReportStateBuilder {
-    fn update(&self, thing: Thing) -> Thing {
+    fn update(&self, thing: Thing<Internal>) -> Thing<Internal> {
         InfallibleUpdater::update(&ReportedStateUpdater::from(self.clone()), thing)
     }
 }

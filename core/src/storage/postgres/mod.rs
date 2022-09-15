@@ -64,8 +64,8 @@ pub struct Data {
     pub internal: Option<Internal>,
 }
 
-impl From<&Thing> for Data {
-    fn from(value: &Thing) -> Self {
+impl From<&Thing<Internal>> for Data {
+    fn from(value: &Thing<Internal>) -> Self {
         Self {
             schema: value.schema.clone(),
             reported_state: value.reported_state.clone(),
@@ -134,7 +134,7 @@ impl super::Storage for Storage {
     }
 
     #[instrument(skip(self), err)]
-    async fn get(&self, application: &str, name: &str) -> Result<Option<Thing>> {
+    async fn get(&self, application: &str, name: &str) -> Result<Option<Thing<Internal>>> {
         if let Err(storage::Error::NotFound) =
             self.ensure_app(application, || storage::Error::NotFound)
         {
@@ -206,7 +206,7 @@ WHERE
     }
 
     #[instrument(skip_all, err)]
-    async fn create(&self, mut thing: Thing) -> Result<Thing> {
+    async fn create(&self, mut thing: Thing<Internal>) -> Result<Thing<Internal>> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotAllowed)?;
 
         let con = self.connection().await?;
@@ -301,7 +301,7 @@ INSERT INTO things (
     }
 
     #[instrument(skip_all, err)]
-    async fn update(&self, mut thing: Thing) -> Result<Thing> {
+    async fn update(&self, mut thing: Thing<Internal>) -> Result<Thing<Internal>> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotFound)?;
 
         let con = self.connection().await?;
@@ -485,6 +485,6 @@ impl Storage {
     }
 }
 
-fn waker_data(thing: &Thing) -> Option<DateTime<Utc>> {
+fn waker_data(thing: &Thing<Internal>) -> Option<DateTime<Utc>> {
     thing.internal.as_ref().and_then(|i| i.waker.when)
 }

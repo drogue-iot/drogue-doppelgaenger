@@ -227,7 +227,7 @@ impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> Handler<message::Subsc
                         let initial_generation = thing.metadata.generation;
                         // send initial
                         addr.do_send(message::Event(Response::Initial {
-                            thing: Arc::new(thing),
+                            thing: Arc::new(thing.into_external()),
                         }));
                         initial_generation
                     }

@@ -71,7 +71,7 @@ impl super::Notifier for Notifier {
     }
 
     #[instrument(skip_all, err)]
-    async fn notify(&self, thing: &Thing) -> Result<(), notifier::Error<Self::Error>> {
+    async fn notify(&self, thing: &Thing<Internal>) -> Result<(), notifier::Error<Self::Error>> {
         let Metadata {
             application, name, ..
         } = &thing.metadata;

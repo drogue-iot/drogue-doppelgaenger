@@ -1,6 +1,6 @@
 pub mod kafka;
 
-use crate::model::Thing;
+use crate::model::{Internal, Thing};
 use crate::service::Id;
 use async_trait::async_trait;
 use std::fmt::Debug;
@@ -18,5 +18,5 @@ pub trait Notifier: Sized + Send + Sync + 'static {
 
     fn from_config(config: &Self::Config) -> anyhow::Result<Self>;
 
-    async fn notify(&self, thing: &Thing) -> Result<(), Error<Self::Error>>;
+    async fn notify(&self, thing: &Thing<Internal>) -> Result<(), Error<Self::Error>>;
 }

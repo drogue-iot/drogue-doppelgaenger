@@ -52,7 +52,7 @@ pub struct Timer {
     pub code: Code,
     /// the period the timer is scheduled
     #[serde(with = "humantime_serde")]
-    #[schemars(schema_with = "crate::schemars::humantime")]
+    #[schemars(schema_with = "crate::types::humantime")]
     pub period: Duration,
     /// A flag to stop the timer
     #[serde(default)]
@@ -71,7 +71,7 @@ pub struct Timer {
     /// configured
     #[serde(with = "humantime_serde")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "crate::schemars::humantime")]
+    #[schemars(schema_with = "crate::types::humantime")]
     pub initial_delay: Option<Duration>,
 }
 
@@ -106,7 +106,7 @@ mod test {
 
     #[test]
     pub fn test_ser() {
-        let mut thing = Thing::new("default", "thing1");
+        let mut thing: Thing = Thing::new("default", "thing1");
         thing.reconciliation.deleting.insert(
             "test".to_string(),
             Deleting {

@@ -1,5 +1,6 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use std::collections::BTreeSet;
 
 pub trait WakerExt {
     fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason);
@@ -11,7 +12,7 @@ pub trait WakerExt {
     fn clear_wakeup(&mut self, reason: WakerReason);
 }
 
-impl WakerExt for Thing {
+impl WakerExt for Thing<Internal> {
     fn wakeup_at(&mut self, when: DateTime<Utc>, reason: WakerReason) {
         match &mut self.internal {
             Some(internal) => {

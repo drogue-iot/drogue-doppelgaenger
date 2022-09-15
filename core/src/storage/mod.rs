@@ -1,5 +1,6 @@
 pub mod postgres;
 
+use crate::model::Internal;
 use crate::{
     model::{Metadata, Thing},
     Preconditions,
@@ -51,10 +52,13 @@ pub trait Storage: Sized + Send + Sync + 'static {
 
     fn from_config(config: &Self::Config) -> anyhow::Result<Self>;
 
-    async fn get(&self, application: &str, name: &str)
-        -> Result<Option<Thing>, Error<Self::Error>>;
-    async fn create(&self, thing: Thing) -> Result<Thing, Error<Self::Error>>;
-    async fn update(&self, thing: Thing) -> Result<Thing, Error<Self::Error>>;
+    async fn get(
+        &self,
+        application: &str,
+        name: &str,
+    ) -> Result<Option<Thing<Internal>>, Error<Self::Error>>;
+    async fn create(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Error<Self::Error>>;
+    async fn update(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Error<Self::Error>>;
 
     #[instrument(skip(self, f), err, ret)]
     async fn patch<F, Fut, E>(
@@ -62,10 +66,10 @@ pub trait Storage: Sized + Send + Sync + 'static {
         application: &str,
         name: &str,
         f: F,
-    ) -> Result<Thing, UpdateError<Self::Error, E>>
+    ) -> Result<Thing<Internal>, UpdateError<Self::Error, E>>
     where
-        F: FnOnce(Thing) -> Fut + Send + Sync,
-        Fut: Future<Output = Result<Thing, E>> + Send + Sync,
+        F: FnOnce(Thing<Internal>) -> Fut + Send + Sync,
+        Fut: Future<Output = Result<Thing<Internal>, E>> + Send + Sync,
         E: Send + Sync + std::error::Error,
     {
         log::debug!("Updating existing thing: {application} / {name}");

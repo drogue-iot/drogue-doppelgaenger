@@ -1,9 +1,9 @@
 use crate::common::mock::{setup, RunningContext};
 use drogue_doppelgaenger_core::{
-    model::{Code, Deleting, Thing},
     processor::{Event, Message},
     service::{AnnotationsUpdater, Id, UpdateOptions},
 };
+use drogue_doppelgaenger_model::{Code, Deleting};
 use serde_json::json;
 use std::time::Duration;
 
@@ -158,7 +158,7 @@ switch (context.action) {
 
     // expect a group of [foo, bar, baz], a thing named "device" and a thing named "device/channel"
     let id = Id::new("default", "device/channel");
-    let mut thing = Thing::with_id(&id);
+    let mut thing = id.make_thing();
     thing.reconciliation.deleting.insert(
         "hierarchy".to_string(),
         Deleting {

@@ -4,7 +4,7 @@ use schemars::gen::SchemaSettings;
 #[allow(unused)]
 struct Wrapper {
     error_information: drogue_doppelgaenger_core::error::ErrorInformation,
-    thing: drogue_doppelgaenger_core::model::Thing,
+    thing: drogue_doppelgaenger_model::Thing,
     desired_state_update: drogue_doppelgaenger_core::service::DesiredStateUpdate,
 }
 

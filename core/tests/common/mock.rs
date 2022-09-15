@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use drogue_bazaar::app::Startup;
 use drogue_bazaar::core::Spawner;
+use drogue_doppelgaenger_core::model::{Internal, InternalThingExt};
 use drogue_doppelgaenger_core::{
     command::{Command, CommandSink},
     model::{Thing, WakerReason},
@@ -34,7 +35,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct MockStorage {
     pub application: String,
-    pub things: Arc<RwLock<BTreeMap<String, Thing>>>,
+    pub things: Arc<RwLock<BTreeMap<String, Thing<Internal>>>>,
     waker: MockWaker,
 }
 
@@ -61,7 +62,7 @@ impl Storage for MockStorage {
         &self,
         application: &str,
         name: &str,
-    ) -> Result<Option<Thing>, Error<Self::Error>> {
+    ) -> Result<Option<Thing<Internal>>, Error<Self::Error>> {
         if application != self.application {
             return Ok(None);
         }
@@ -69,7 +70,10 @@ impl Storage for MockStorage {
         return Ok(self.things.read().await.get(name).cloned());
     }
 
-    async fn create(&self, mut thing: Thing) -> Result<Thing, Error<Self::Error>> {
+    async fn create(
+        &self,
+        mut thing: Thing<Internal>,
+    ) -> Result<Thing<Internal>, Error<Self::Error>> {
         if thing.metadata.application != self.application {
             return Err(Error::NotAllowed);
         }
@@ -100,7 +104,10 @@ impl Storage for MockStorage {
         Ok(thing)
     }
 
-    async fn update(&self, mut thing: Thing) -> Result<Thing, Error<Self::Error>> {
+    async fn update(
+        &self,
+        mut thing: Thing<Internal>,
+    ) -> Result<Thing<Internal>, Error<Self::Error>> {
         if thing.metadata.application != self.application {
             return Err(Error::NotAllowed);
         }
@@ -177,7 +184,7 @@ impl Storage for MockStorage {
 
 #[derive(Clone)]
 pub struct MockNotifier {
-    pub events: Arc<RwLock<Vec<Thing>>>,
+    pub events: Arc<RwLock<Vec<Thing<Internal>>>>,
 }
 
 impl MockNotifier {
@@ -187,7 +194,7 @@ impl MockNotifier {
         }
     }
 
-    pub async fn drain(&mut self) -> Vec<Thing> {
+    pub async fn drain(&mut self) -> Vec<Thing<Internal>> {
         let mut lock = self.events.write().await;
         lock.drain(..).collect()
     }
@@ -204,7 +211,7 @@ impl Notifier for MockNotifier {
 
     async fn notify(
         &self,
-        thing: &Thing,
+        thing: &Thing<Internal>,
     ) -> Result<(), drogue_doppelgaenger_core::notifier::Error<Self::Error>> {
         self.events.write().await.push(thing.clone());
         Ok(())
@@ -474,7 +481,7 @@ impl MockWaker {
         }
     }
 
-    pub async fn update(&self, thing: &Thing) {
+    pub async fn update(&self, thing: &Thing<Internal>) {
         let mut lock = self.wakers.lock().await;
 
         let waker = thing.waker();

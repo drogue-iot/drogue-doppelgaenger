@@ -2,11 +2,13 @@ mod deno;
 mod desired;
 mod recon;
 
-use crate::machine::recon::{Reconciler, ScriptAction};
 use crate::{
     command::Command,
-    machine::deno::{DenoOptions, Json},
-    model::{Code, JsonSchema, Metadata, Schema, Thing, ThingState},
+    machine::{
+        deno::{DenoOptions, Json},
+        recon::{Reconciler, ScriptAction},
+    },
+    model::{Code, Internal, JsonSchema, Metadata, Schema, Thing, ThingState},
     processor::Message,
 };
 use anyhow::anyhow;
@@ -43,28 +45,28 @@ pub enum Error {
 
 /// The state machine runner. Good for a single run.
 pub struct Machine {
-    thing: Thing,
+    thing: Thing<Internal>,
 }
 
 pub struct Outcome {
-    pub new_thing: Thing,
+    pub new_thing: Thing<Internal>,
     pub outbox: Vec<OutboxMessage>,
     pub commands: Vec<Command>,
 }
 
 pub struct DeletionOutcome {
-    pub thing: Thing,
+    pub thing: Thing<Internal>,
     pub outbox: Vec<OutboxMessage>,
 }
 
 impl Machine {
-    pub fn new(thing: Thing) -> Self {
+    pub fn new(thing: Thing<Internal>) -> Self {
         Self { thing }
     }
 
     /// Run actions for creating a new thing.
     #[instrument(skip_all, err)]
-    pub async fn create(new_thing: Thing) -> Result<Outcome, Error> {
+    pub async fn create(new_thing: Thing<Internal>) -> Result<Outcome, Error> {
         // Creating means that we start with an empty thing, and then set the initial state.
         // This allows to run through the reconciliation initially.
         let outcome = Self::new(Thing::new(
@@ -82,8 +84,8 @@ impl Machine {
     #[instrument(skip_all, err)]
     pub async fn update<F, Fut, E>(self, f: F) -> Result<Outcome, Error>
     where
-        F: FnOnce(Thing) -> Fut,
-        Fut: Future<Output = Result<Thing, E>>,
+        F: FnOnce(Thing<Internal>) -> Fut,
+        Fut: Future<Output = Result<Thing<Internal>, E>>,
         E: std::error::Error + Send + Sync + 'static,
     {
         // capture immutable or internal metadata
@@ -153,7 +155,7 @@ impl Machine {
     }
 
     #[instrument(skip_all, err)]
-    pub async fn delete(thing: Thing) -> Result<DeletionOutcome, Error> {
+    pub async fn delete(thing: Thing<Internal>) -> Result<DeletionOutcome, Error> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
 
         let thing = Arc::new(thing);
@@ -166,8 +168,8 @@ impl Machine {
                     #[derive(Clone, Debug, serde::Serialize)]
                     #[serde(rename_all = "camelCase")]
                     struct Input {
-                        current_state: Arc<Thing>,
-                        new_state: Arc<Thing>,
+                        current_state: Arc<Thing<Internal>>,
+                        new_state: Arc<Thing<Internal>>,
                         action: ScriptAction,
 
                         outbox: Vec<OutboxMessage>,
@@ -215,7 +217,7 @@ impl Machine {
     }
 
     #[instrument(skip_all, err)]
-    fn validate(new_thing: &Thing) -> Result<(), Error> {
+    fn validate(new_thing: &Thing<Internal>) -> Result<(), Error> {
         match &new_thing.schema {
             Some(Schema::Json(schema)) => match schema {
                 JsonSchema::Draft7(schema) => {
@@ -371,7 +373,7 @@ mod test {
         }
     }
 
-    fn test_thing() -> Thing {
+    fn test_thing() -> Thing<Internal> {
         Thing {
             metadata: test_metadata(),
             schema: None,

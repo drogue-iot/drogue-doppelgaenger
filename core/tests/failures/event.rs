@@ -6,7 +6,7 @@ use std::future::Future;
 
 use crate::common::failure::{Failure, Iter};
 use crate::common::mock::{MockNotifier, MockSink, MockStorage};
-use drogue_doppelgaenger_core::model::{Changed, Code, Reconciliation, Thing};
+use drogue_doppelgaenger_core::model::{Changed, Code, Internal, Reconciliation, Thing};
 use drogue_doppelgaenger_core::processor::{Event, Message, ReportStateBuilder};
 use drogue_doppelgaenger_core::service::{Error, Id, Service, UpdateOptions, POSTPONE_DURATION};
 
@@ -35,7 +35,7 @@ impl<'t> TestRunner<'t> {
 
     async fn assert_step(
         &mut self,
-        actual: Result<Thing, Error<MockStorage, MockNotifier, MockCommandSink>>,
+        actual: Result<Thing<Internal>, Error<MockStorage, MockNotifier, MockCommandSink>>,
         expected: Result<(usize, Vec<usize>), String>,
     ) {
         match (actual, expected) {
@@ -136,7 +136,7 @@ context.outbox.push({thing: "thing2", message: { merge: {"counter": value}}});
                 },
                 ..Default::default()
             },
-            ..Thing::with_id(&id)
+            ..id.make_thing()
         })
         .await;
 

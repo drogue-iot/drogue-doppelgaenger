@@ -1,7 +1,8 @@
 use crate::common::mock::{setup, RunningContext};
 use chrono::Utc;
-use drogue_doppelgaenger_core::model::{Code, Reconciliation, Thing, Timer, WakerReason};
+use drogue_doppelgaenger_core::model::WakerReason;
 use drogue_doppelgaenger_core::service::Id;
+use drogue_doppelgaenger_model::{Code, Reconciliation, Thing, Timer};
 use indexmap::IndexMap;
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -52,7 +53,7 @@ if (context.newState.reportedState?.["foo"] === undefined) {
                 },
                 ..Default::default()
             },
-            ..Thing::with_id(&id)
+            ..id.make_thing()
         })
         .await
         .unwrap();
@@ -135,7 +136,7 @@ context.newState.reportedState["timer"] = { value, lastUpdate };
                 },
                 ..Default::default()
             },
-            ..Thing::with_id(&id)
+            ..id.make_thing()
         })
         .await
         .unwrap();

@@ -15,12 +15,13 @@ use std::{
     time::Duration,
 };
 
+use crate::model::Internal;
 pub use json_patch::Patch;
 
 pub trait Updater {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn update(&self, thing: Thing) -> Result<Thing, Self::Error>;
+    fn update(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Self::Error>;
 }
 
 pub trait UpdaterExt: Updater + Sized {
@@ -58,7 +59,7 @@ where
 {
     type Error = AndThenError<U1::Error, U2::Error>;
 
-    fn update(&self, thing: Thing) -> Result<Thing, Self::Error> {
+    fn update(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Self::Error> {
         Ok(self
             .1
             .update(self.0.update(thing).map_err(AndThenError::First)?)
@@ -67,7 +68,7 @@ where
 }
 
 pub trait InfallibleUpdater {
-    fn update(&self, thing: Thing) -> Thing;
+    fn update(&self, thing: Thing<Internal>) -> Thing<Internal>;
 }
 
 impl<I> Updater for I
@@ -76,13 +77,13 @@ where
 {
     type Error = Infallible;
 
-    fn update(&self, thing: Thing) -> Result<Thing, Self::Error> {
+    fn update(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Self::Error> {
         Ok(InfallibleUpdater::update(self, thing))
     }
 }
 
 impl InfallibleUpdater for () {
-    fn update(&self, thing: Thing) -> Thing {
+    fn update(&self, thing: Thing<Internal>) -> Thing<Internal> {
         thing
     }
 }
@@ -104,7 +105,7 @@ impl UpdateMode {
 pub struct MapValueInserter(pub String, pub String);
 
 impl InfallibleUpdater for MapValueInserter {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         match thing.reported_state.entry(self.0.clone()) {
             Entry::Occupied(mut entry) => {
                 let e = entry.get_mut();
@@ -133,7 +134,7 @@ impl InfallibleUpdater for MapValueInserter {
 pub struct Cleanup(pub String);
 
 impl InfallibleUpdater for Cleanup {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         if thing
             .reported_state
             .get(&self.0)
@@ -161,7 +162,7 @@ impl InfallibleUpdater for Cleanup {
 pub struct MapValueRemover(pub String, pub String);
 
 impl InfallibleUpdater for MapValueRemover {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         match thing.reported_state.entry(self.0.clone()) {
             Entry::Occupied(mut entry) => match &mut entry.get_mut().value {
                 Value::Object(fields) => {
@@ -183,7 +184,7 @@ impl InfallibleUpdater for MapValueRemover {
 pub struct ReportedStateUpdater(pub BTreeMap<String, Value>, pub UpdateMode);
 
 impl InfallibleUpdater for ReportedStateUpdater {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         match self.1 {
             // merge new data into current, update timestamps when the value has indeed changed
             UpdateMode::Merge => {
@@ -230,14 +231,14 @@ impl InfallibleUpdater for ReportedStateUpdater {
 }
 
 impl InfallibleUpdater for Reconciliation {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         thing.reconciliation = self.clone();
         thing
     }
 }
 
-impl InfallibleUpdater for Thing {
-    fn update(&self, _: Thing) -> Thing {
+impl InfallibleUpdater for Thing<Internal> {
+    fn update(&self, _: Thing<Internal>) -> Thing<Internal> {
         self.clone()
     }
 }
@@ -256,7 +257,7 @@ pub enum PatchError {
 impl Updater for JsonPatchUpdater {
     type Error = PatchError;
 
-    fn update(&self, thing: Thing) -> Result<Thing, Self::Error> {
+    fn update(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Self::Error> {
         let mut json = serde_json::to_value(thing)?;
         json_patch::patch(&mut json, &self.0)?;
         Ok(serde_json::from_value(json)?)
@@ -273,7 +274,7 @@ pub struct MergeError(#[from] serde_json::Error);
 impl Updater for JsonMergeUpdater {
     type Error = MergeError;
 
-    fn update(&self, thing: Thing) -> Result<Thing, Self::Error> {
+    fn update(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Self::Error> {
         let mut json = serde_json::to_value(thing)?;
         json_patch::merge(&mut json, &self.0);
         Ok(serde_json::from_value(json)?)
@@ -283,7 +284,7 @@ impl Updater for JsonMergeUpdater {
 pub struct SyntheticStateUpdater(pub String, pub SyntheticType);
 
 impl InfallibleUpdater for SyntheticStateUpdater {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         match thing.synthetic_state.entry(self.0.clone()) {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().r#type = self.1.clone();
@@ -311,7 +312,7 @@ pub struct DesiredStateUpdate {
     pub valid_until: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "humantime_serde")]
-    #[schemars(schema_with = "crate::schemars::humantime")]
+    #[schemars(schema_with = "drogue_doppelgaenger_model::types::humantime")]
     pub valid_for: Option<Duration>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -334,7 +335,10 @@ pub struct DesiredStateUpdater(pub String, pub DesiredStateUpdate);
 impl Updater for DesiredStateUpdater {
     type Error = DesiredStateUpdaterError;
 
-    fn update(&self, mut thing: Thing) -> Result<Thing, DesiredStateUpdaterError> {
+    fn update(
+        &self,
+        mut thing: Thing<Internal>,
+    ) -> Result<Thing<Internal>, DesiredStateUpdaterError> {
         let DesiredStateUpdate {
             value,
             valid_until,
@@ -395,7 +399,7 @@ pub struct DesiredStateValueUpdater(pub BTreeMap<String, SetDesiredValue>);
 impl Updater for DesiredStateValueUpdater {
     type Error = DesiredStateValueUpdaterError;
 
-    fn update(&self, mut thing: Thing) -> Result<Thing, Self::Error> {
+    fn update(&self, mut thing: Thing<Internal>) -> Result<Thing<Internal>, Self::Error> {
         let mut missing = vec![];
 
         for (name, set) in self.0.clone() {
@@ -434,7 +438,7 @@ impl AnnotationsUpdater {
 }
 
 impl InfallibleUpdater for AnnotationsUpdater {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         for (k, v) in &self.0 {
             match v {
                 Some(v) => {
@@ -453,7 +457,7 @@ impl InfallibleUpdater for AnnotationsUpdater {
 }
 
 impl InfallibleUpdater for IndexMap<String, Deleting> {
-    fn update(&self, mut thing: Thing) -> Thing {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
         for (k, v) in self {
             thing
                 .reconciliation
@@ -472,7 +476,7 @@ mod test {
     use super::*;
     use serde_json::Value;
 
-    fn new_thing() -> Thing {
+    fn new_thing() -> Thing<Internal> {
         Thing::new("default", "test")
     }
 

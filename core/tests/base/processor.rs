@@ -1,5 +1,4 @@
 use crate::common::mock::{setup, RunningContext};
-use drogue_doppelgaenger_core::model::Thing;
 use drogue_doppelgaenger_core::processor::{Event, Message};
 use drogue_doppelgaenger_core::service::Id;
 use serde_json::json;
@@ -14,7 +13,7 @@ async fn test_process() {
     } = setup().run(false);
 
     let id = Id::new("default", "thing1");
-    let thing = service.create(Thing::with_id(&id)).await.unwrap();
+    let thing = service.create(id.make_thing()).await.unwrap();
 
     assert_eq!(notifier.drain().await, vec![thing.clone()]);
 

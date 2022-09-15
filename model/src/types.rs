@@ -4,7 +4,7 @@ use schemars::{
     JsonSchema,
 };
 
-pub(crate) fn humantime(gen: &mut SchemaGenerator) -> Schema {
+pub fn humantime(gen: &mut SchemaGenerator) -> Schema {
     let mut schema: SchemaObject = <String>::json_schema(gen).into();
     schema.metadata = Some(Box::new(Metadata {
         id: None,

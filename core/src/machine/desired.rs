@@ -1,10 +1,13 @@
 use super::deno;
-use crate::machine::recon::ScriptAction;
-use crate::model::CommandMode;
 use crate::{
     command,
-    machine::deno::{DenoOptions, Execution, Json},
-    model::{self, Code, CommandEncoding, Thing, Waker, WakerExt, WakerReason},
+    machine::{
+        deno::{DenoOptions, Execution, Json},
+        recon::ScriptAction,
+    },
+    model::{
+        self, Code, CommandEncoding, CommandMode, Internal, Thing, Waker, WakerExt, WakerReason,
+    },
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -87,7 +90,7 @@ impl TryFrom<Payload> for Vec<u8> {
 }
 
 pub struct Context<'r> {
-    pub new_thing: Arc<Thing>,
+    pub new_thing: Arc<Thing<Internal>>,
     pub deadline: Instant,
     pub waker: &'r mut Waker,
     pub commands: &'r mut CommandBuilder,

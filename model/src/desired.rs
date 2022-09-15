@@ -103,7 +103,7 @@ pub enum DesiredFeatureMethod {
 pub struct Command {
     /// The period when a command will be sent out to reconcile.
     #[serde(with = "humantime_serde")]
-    #[schemars(schema_with = "crate::schemars::humantime")]
+    #[schemars(schema_with = "crate::types::humantime")]
     pub period: std::time::Duration,
 
     /// If the command should be sent actively after the period expired.
@@ -146,7 +146,7 @@ mod test {
 
     #[test]
     fn test_ser_desired() {
-        let mut thing = Thing::new("app", "thing");
+        let mut thing: Thing = Thing::new("app", "thing");
         thing.desired_state.insert(
             "foo".to_string(),
             DesiredFeature {

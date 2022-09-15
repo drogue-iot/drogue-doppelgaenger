@@ -1,6 +1,6 @@
 use crate::common::mock::{setup, Context};
-use drogue_doppelgaenger_core::model::{Metadata, Thing};
 use drogue_doppelgaenger_core::service::UpdateOptions;
+use drogue_doppelgaenger_model::{Metadata, Thing};
 use std::collections::BTreeMap;
 
 const OPTS: UpdateOptions = UpdateOptions {

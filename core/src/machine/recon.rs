@@ -6,8 +6,8 @@ use crate::{
         Error, ExecutionResult, OutboxMessage, Outcome, TIMER_DELAY,
     },
     model::{
-        Changed, Code, DesiredFeatureMethod, DesiredFeatureReconciliation, DesiredMode,
-        Reconciliation, SyntheticType, Thing, Timer, WakerExt, WakerReason,
+        Changed, Code, DesiredFeatureMethod, DesiredFeatureReconciliation, DesiredMode, Internal,
+        InternalThingExt, Reconciliation, SyntheticType, Thing, Timer, WakerExt, WakerReason,
     },
 };
 use anyhow::anyhow;
@@ -29,14 +29,14 @@ pub enum ScriptAction {
 
 pub struct Reconciler {
     deadline: tokio::time::Instant,
-    current_thing: Arc<Thing>,
-    new_thing: Thing,
+    current_thing: Arc<Thing<Internal>>,
+    new_thing: Thing<Internal>,
     outbox: Vec<OutboxMessage>,
     commands: Vec<Command>,
 }
 
 impl Reconciler {
-    pub fn new(current_thing: Arc<Thing>, new_thing: Thing) -> Self {
+    pub fn new(current_thing: Arc<Thing<Internal>>, new_thing: Thing<Internal>) -> Self {
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(1);
 
         Self {
@@ -439,8 +439,8 @@ impl Reconciler {
                 #[derive(serde::Serialize)]
                 #[serde(rename_all = "camelCase")]
                 struct Input {
-                    current_state: Arc<Thing>,
-                    new_state: Thing,
+                    current_state: Arc<Thing<Internal>>,
+                    new_state: Thing<Internal>,
                     action: ScriptAction,
                     // the following items are scooped off by the output, but we need to initialize
                     // them to present, but empty values for the scripts.
@@ -452,7 +452,7 @@ impl Reconciler {
                 #[serde(rename_all = "camelCase")]
                 pub struct Output {
                     #[serde(default)]
-                    new_state: Option<Thing>,
+                    new_state: Option<Thing<Internal>>,
                     #[serde(default)]
                     outbox: Vec<OutboxMessage>,
                     #[serde(default)]
@@ -506,7 +506,7 @@ impl Reconciler {
     async fn run_synthetic(
         name: &str,
         r#type: &SyntheticType,
-        new_state: Arc<Thing>,
+        new_state: Arc<Thing<Internal>>,
         deadline: tokio::time::Instant,
     ) -> Result<Value, Error> {
         match r#type {
@@ -514,7 +514,7 @@ impl Reconciler {
                 #[derive(serde::Serialize)]
                 #[serde(rename_all = "camelCase")]
                 struct Input {
-                    new_state: Arc<Thing>,
+                    new_state: Arc<Thing<Internal>>,
                     action: ScriptAction,
                 }
 

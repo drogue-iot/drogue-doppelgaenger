@@ -1,8 +1,8 @@
 pub mod actix;
 
 use chrono::{DateTime, Utc};
-use drogue_doppelgaenger_core::model::Thing;
 use drogue_doppelgaenger_core::processor;
+use drogue_doppelgaenger_model::Thing;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
