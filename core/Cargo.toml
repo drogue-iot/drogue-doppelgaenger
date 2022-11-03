@@ -27,7 +27,7 @@ json-patch = { version = "0.2", default-features = false }
 jsonschema = "0.16"
 lazy_static = "1"
 log = "0.4"
-opentelemetry = { version = "0.17", features = ["rt-tokio"] }
+opentelemetry = { version = "0.18", features = ["rt-tokio"] }
 postgres-types = "0.2"
 prometheus = { version = "0.13" }
 rdkafka = { version = "0.29", features = ["sasl", "ssl"] }
@@ -41,12 +41,12 @@ time = "0.1"
 tokio = "1"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
-tracing-opentelemetry = "0.17"
+tracing-opentelemetry = "0.18"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 
-opentelemetry-jaeger = { version = "0.16", features = ["rt-tokio"], optional = true }
+opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"], optional = true }
 
 deadpool-postgres = { version = "0.10", features = ["rt_tokio_1", "serde"] }
 postgres-native-tls = { version = "0.5" }

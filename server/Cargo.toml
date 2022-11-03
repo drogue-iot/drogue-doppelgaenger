@@ -27,7 +27,7 @@ rustls-native-certs = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-tracing-actix-web = { version  = "0.6", features = ["opentelemetry_0_17"] }
+tracing-actix-web = { version  = "0.6.2", features = ["opentelemetry_0_18"] }
 uuid = { version = "1", features = ["v4"] }
 
 drogue-doppelgaenger-core = { path = "../core" }
