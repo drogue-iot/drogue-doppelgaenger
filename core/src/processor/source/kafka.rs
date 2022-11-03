@@ -8,6 +8,7 @@ use rdkafka::{
     message::{BorrowedMessage, Headers},
     Message,
 };
+use std::str::from_utf8;
 use std::{collections::HashMap, future::Future};
 use tracing::instrument;
 
@@ -127,19 +128,19 @@ fn extract_meta(msg: &BorrowedMessage) -> anyhow::Result<(String, String, String
     let mut application = None;
     let mut thing = None;
 
-    for i in 0..headers.count() {
-        match headers.get_as::<str>(i) {
-            Some(("ce_id", Ok(value))) => {
-                id = Some(value);
+    for h in headers.iter() {
+        match h.key {
+            "ce_id" => {
+                id = h.value.and_then(|s| from_utf8(s).ok());
             }
-            Some(("ce_timestamp", Ok(value))) => {
-                timestamp = Some(value);
+            "ce_timestamp" => {
+                timestamp = h.value.and_then(|s| from_utf8(s).ok());
             }
-            Some(("ce_application", Ok(value))) => {
-                application = Some(value);
+            "ce_application" => {
+                application = h.value.and_then(|s| from_utf8(s).ok());
             }
-            Some(("ce_thing", Ok(value))) => {
-                thing = Some(value);
+            "ce_thing" => {
+                thing = h.value.and_then(|s| from_utf8(s).ok());
             }
             _ => {}
         }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::kafka::KafkaProperties;
+use crate::kafka::AddHeader;
 use crate::model::Metadata;
 use crate::notifier;
 use async_trait::async_trait;

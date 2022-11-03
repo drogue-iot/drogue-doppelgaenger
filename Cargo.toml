@@ -15,7 +15,7 @@ exclude = [
 
 [patch.crates-io]
 #drogue-bazaar = { path = "../drogue-bazaar" }
-#drogue-bazaar = { git = "https://github.com/drogue-iot/drogue-bazaar", rev = "34bc8931b9669e39c52685f2cda2ba9f1b226cb2" }
+drogue-bazaar = { git = "https://github.com/drogue-iot/drogue-bazaar", rev = "8f6f41be3ac9eee8bb9c01affb81552485f27466" }
 #drogue-client = { path = "../drogue-client" }
 #drogue-client = { git = "https://github.com/drogue-iot/drogue-client", rev = "0cb6998da75905240f06f38a44aac31d7b3fdde5" } # FIXME: awaiting release 0.11.0
 

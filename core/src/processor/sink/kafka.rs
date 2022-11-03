@@ -1,5 +1,5 @@
 use crate::config::kafka::KafkaProperties;
-use crate::kafka::KafkaHeaders;
+use crate::kafka::{AddHeader, KafkaHeaders};
 use crate::processor::Event;
 use anyhow::anyhow;
 use async_trait::async_trait;
