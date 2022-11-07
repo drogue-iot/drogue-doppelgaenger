@@ -71,7 +71,7 @@ jobs:
   info:
     name: info
     runs-on: ubuntu-22.04
-    needs: [prepare]
+    needs: [ prepare ]
     steps:
       - run: |
           echo "do-build: ${{needs.prepare.outputs.do-build}}"
@@ -82,7 +82,7 @@ jobs:
 
   check:
     runs-on: ubuntu-22.04
-    needs: [prepare]
+    needs: [ prepare ]
     if: needs.prepare.outputs.do-build == 'true'
     steps:
 
@@ -115,7 +115,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-22.04
-    needs: [prepare, check]
+    needs: [ prepare, check ]
     if: needs.prepare.outputs.do-build == 'true'
     steps:
 
@@ -149,7 +149,7 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-22.04
-    needs: [prepare, check]
+    needs: [ prepare, check ]
     if: needs.prepare.outputs.do-build == 'true'
     steps:
 
@@ -180,7 +180,7 @@ jobs:
 
   server-linux:
     runs-on: ubuntu-22.04
-    needs: [prepare, check]
+    needs: [ prepare, check ]
     if: needs.prepare.outputs.do-build == 'true'
     env:
       VERSION: ${{needs.prepare.outputs.version}}
@@ -217,8 +217,8 @@ jobs:
           if-no-files-found: error
 
   server-linux-aarch64:
-    runs-on: self-hosted
-    needs: [prepare, check]
+    runs-on: [ self-hosted, linux, ARM64 ]
+    needs: [ prepare, check ]
     if: needs.prepare.outputs.do-build == 'true'
     env:
       VERSION: ${{needs.prepare.outputs.version}}
@@ -249,7 +249,7 @@ jobs:
 
   server-macos:
     runs-on: macos-12
-    needs: [prepare, check]
+    needs: [ prepare, check ]
     if: needs.prepare.outputs.do-build == 'true'
     env:
       VERSION: ${{needs.prepare.outputs.version}}
@@ -298,7 +298,7 @@ jobs:
   deploy:
     name: deploy on kind
     runs-on: ubuntu-22.04
-    needs: [prepare, build]
+    needs: [ prepare, build ]
     if: needs.prepare.outputs.do-build == 'true'
     env:
       CLUSTER: "kind"
@@ -373,7 +373,7 @@ jobs:
           path: /tmp/logs
 
   publish:
-    needs: [prepare, deploy, test, server-linux, server-macos]
+    needs: [ prepare, deploy, test, server-linux, server-macos ]
     if: (needs.prepare.outputs.do-build == 'true') && (needs.prepare.outputs.do-publish == 'true')
 
     runs-on: ubuntu-22.04
