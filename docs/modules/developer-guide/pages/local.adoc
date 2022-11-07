@@ -18,9 +18,14 @@ directory before starting the process. The following file is an example, which s
 ----
 include::../attachments/dotenv[]
 ----
-<1> Uncomment to enable tracing with Jaeger
+<1> Enable/disable the injector module.
+<2> The shared group ID, used when consuming events. If your environment doesn't support `USER` and `HOSTNAME`, you
+need to provide a unique ID here yourself.
+<3> Points to the public Drogue Cloud sandbox.
+<4> Consumes from the publicly available `drogue-public-temperature` application.
+<5> Uncomment to enable tracing with Jaeger. Can be used combination with the `develop/compose-health.yaml` deployment.
 
-And then run the local server binary:
+And then, run the local server binary:
 
 [source,shell]
 ----
