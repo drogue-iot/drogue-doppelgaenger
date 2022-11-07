@@ -159,7 +159,7 @@ where
         }
     }
 
-    #[instrument(skip_all, fields(application=self.application), err)]
+    #[instrument(level = "debug", skip_all, fields(application=self.application), err)]
     async fn run(mut self) -> anyhow::Result<()> {
         let stmt = self
             .con
