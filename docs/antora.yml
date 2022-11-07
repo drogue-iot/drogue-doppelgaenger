@@ -1,0 +1,7 @@
+name: drogue-doppelgaenger
+title: Drogue Doppelgänger
+version: dev
+nav:
+  - modules/ROOT/nav.adoc
+  - modules/developer-guide/nav.adoc
+  - modules/api/nav.adoc

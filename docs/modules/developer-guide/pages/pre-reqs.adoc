@@ -1,0 +1,8 @@
+= Pre-requisites
+
+In order to work on Doppelgänger, you will need:
+
+* Rust
+* GNU Make
+* Podman Compose (or Docker)
+* A data source (e.g. Drogue Cloud)

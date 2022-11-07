@@ -1,0 +1,22 @@
+= Drogue Doppelgänger
+
+The Drogue IoT Doppelgänger project provides a digital twin implementation.
+
+[quote, Wikipedia, Digital twin]
+A *digital twin* is a virtual representation of a real-world physical system or product (a _physical twin_) that serves as the indistinguishable digital counterpart of it for practical purposes, such as system simulation, integration, testing, monitoring, and maintenance
+
+[NOTE]
+.Work in progress
+--
+This project is in its early stages. We do provide releases, in order to make it easier to try it out and adopt it.
+
+However, we encourage you to give it a try, and provide feedback, or contribute in other ways. Every contribution is
+welcome.
+--
+
+== About this document
+
+This document makes a few assumptions:
+
+* All commands are executed from the root of the repository (unless noted otherwise).
+* You use `podman`. You can also use `docker`, but need to swap out `podman` for `docker` yourself.
