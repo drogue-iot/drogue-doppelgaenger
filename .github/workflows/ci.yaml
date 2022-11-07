@@ -219,7 +219,7 @@ jobs:
   server-linux-aarch64:
     runs-on: [ self-hosted, linux, ARM64 ]
     needs: [ prepare, check ]
-    if: needs.prepare.outputs.do-build == 'true'
+    if: (needs.prepare.outputs.do-build == 'true') && (needs.prepare.outputs.do-publish == 'true')
     env:
       VERSION: ${{needs.prepare.outputs.version}}
 
