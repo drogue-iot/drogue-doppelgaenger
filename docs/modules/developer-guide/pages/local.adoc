@@ -11,9 +11,16 @@ You can start Kafka, Keycloak, and PostgreSQL in a local developer mode using:
 podman-compose -f develop/compose.yaml up
 ----
 
-And then run the local server binary:
+You will need to provide a configuration. Currently, the easiest way is to create a `.env` file in the `server`
+directory before starting the process. The following file is an example, which should work out of the box:
 
-NOTE: This section neglects to mention that you need a configuration!
+[source,shell]
+----
+include::../attachments/dotenv[]
+----
+<1> Uncomment to enable tracing with Jaeger
+
+And then run the local server binary:
 
 [source,shell]
 ----
