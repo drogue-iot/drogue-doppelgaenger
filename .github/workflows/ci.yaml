@@ -216,6 +216,36 @@ jobs:
           path: target/release/drogue-doppelgaenger-server
           if-no-files-found: error
 
+  server-linux-aarch64:
+    runs-on: self-hosted
+    needs: [prepare, check]
+    if: needs.prepare.outputs.do-build == 'true'
+    env:
+      VERSION: ${{needs.prepare.outputs.version}}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-linux-aarch64-cargo-server-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build binary
+        run: |
+          PQ_LIB_STATIC=1 SASL2_STATIC=1 OPENSSL_STATIC=1 cargo build --release --features static -p drogue-doppelgaenger-server
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: drogue-doppelgaenger-server-linux-aarch64
+          path: target/release/drogue-doppelgaenger-server
+          if-no-files-found: error
 
   server-macos:
     runs-on: macos-12
