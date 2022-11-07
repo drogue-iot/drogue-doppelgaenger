@@ -38,7 +38,7 @@ embed_migrations!("../database-migration/migrations");
 pub struct Server {
     #[serde(default)]
     application: Option<String>,
-    db: drogue_bazaar::db::postgres::Config,
+    storage: drogue_bazaar::db::postgres::Config,
 
     /// sink for change events
     notifier_sink: notifier::kafka::Config,
@@ -123,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
-    run_migrations(&server.db.db).await.unwrap();
+    run_migrations(&server.storage.db).await.unwrap();
     create_topic(
         KafkaProperties(server.notifier_sink.properties.clone()),
         server.notifier_sink.topic.clone(),
@@ -201,7 +201,7 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
     let service = service::Config {
         storage: postgres::Config {
             application: server.application.clone(),
-            postgres: server.db.clone(),
+            postgres: server.storage.clone(),
         },
         notifier: server.notifier_sink,
         sink: server.event_sink.clone(),
@@ -255,7 +255,7 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
     > {
         waker: waker::postgres::Config {
             application: server.application,
-            postgres: server.db,
+            postgres: server.storage,
             check_period: server.check_duration,
         },
         sink: server.event_sink,
