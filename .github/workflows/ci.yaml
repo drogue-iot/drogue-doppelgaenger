@@ -219,7 +219,7 @@ jobs:
   server-linux-aarch64:
     runs-on: [ self-hosted, linux, ARM64 ]
     needs: [ prepare, check ]
-    if: (needs.prepare.outputs.do-build == 'true') && (needs.prepare.outputs.do-publish == 'true')
+    if: (needs.prepare.outputs.do-build == 'true') && (needs.prepare.outputs.do-publish == 'true') && (needs.prepare.outputs.release == 'true')
     env:
       VERSION: ${{needs.prepare.outputs.version}}
 
@@ -418,7 +418,7 @@ jobs:
       - name: Fetch static server binary (linux-aarch64)
         uses: actions/download-artifact@v3
         # we build the aarch64 binaries only when doing releases
-        #if: (needs.prepare.outputs.release == 'true')
+        if: (needs.prepare.outputs.release == 'true')
         with:
           name: drogue-doppelgaenger-server-linux-aarch64
           path: drogue-doppelgaenger-server-linux-aarch64
@@ -431,7 +431,7 @@ jobs:
 
       - name: Rename static server binaries (aarch64)
         # we build the aarch64 binaries only when doing releases
-        #if: (needs.prepare.outputs.release == 'true')
+        if: (needs.prepare.outputs.release == 'true')
         run: |
           mv drogue-doppelgaenger-server-macos-amd64/drogue-doppelgaenger-server server-binaries/drogue-doppelgaenger-server-macos-amd64
 
