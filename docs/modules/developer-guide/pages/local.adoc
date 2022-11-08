@@ -16,7 +16,7 @@ directory before starting the process. The following file is an example, which s
 
 [source,shell]
 ----
-include::../attachments/dotenv[]
+include::attachment$dotenv.sh[]
 ----
 <1> Enable/disable the injector module.
 <2> The shared group ID, used when consuming events. If your environment doesn't support `USER` and `HOSTNAME`, you
