@@ -14,6 +14,7 @@ Drogue IoT cloud admin tool
 Commands:
     deploy       Deploy Drogue IoT to your cluster
     examples     Show some examples to try
+    endpoints    Dump endpoints
 
 EOF
     exit 1

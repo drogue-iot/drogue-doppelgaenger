@@ -181,7 +181,7 @@ progress "done!"
 
 # source the endpoint information
 
-SILENT=true source "${BASEDIR}/cmd/__endpoints.sh"
+source "${BASEDIR}/cmd/__endpoints.sh"
 
 # wait for the rest of the deployments
 
