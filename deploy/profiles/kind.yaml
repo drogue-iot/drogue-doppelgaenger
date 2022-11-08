@@ -21,6 +21,11 @@ drogueCloudTwin:
       service:
         insecure: true
 
+    debugger:
+      ingress:
+        insecure: true
+        port: 80
+
     sso:
       ingress:
         insecure: true
