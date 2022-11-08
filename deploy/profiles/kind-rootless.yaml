@@ -1,0 +1,34 @@
+
+# Ports might seem a bit off, but they must be in the range of 30000-32767
+
+global:
+  drogueCloud:
+    keycloak:
+      insecure: true
+
+drogueCloudTwin:
+
+  api:
+    ingress:
+      insecure: true
+      port: 8080
+    service:
+      insecure: true
+
+  services:
+
+    backend:
+      service:
+        insecure: true
+
+    sso:
+      ingress:
+        insecure: true
+        port: 8080
+
+    swaggerUi:
+      ingress:
+        insecure: true
+        port: 8080
+      service:
+        insecure: true
