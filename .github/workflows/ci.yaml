@@ -76,9 +76,9 @@ jobs:
       - run: |
           echo "do-build: ${{needs.prepare.outputs.do-build}}"
           echo "do-publish: ${{needs.prepare.outputs.do-publish}}"
-          echo "release: ${{steps.state.outputs.release}}"
-          echo "version: ${{steps.version.outputs.version}}"
-          echo "prerelease: ${{steps.state.outputs.prerelease}}"
+          echo "release: ${{needs.prepare.outputs.release}}"
+          echo "version: ${{needs.prepare.outputs.version}}"
+          echo "prerelease: ${{needs.prepare.outputs.prerelease}}"
 
   check:
     runs-on: ubuntu-22.04
@@ -415,10 +415,24 @@ jobs:
           name: drogue-doppelgaenger-server-macos-amd64
           path: drogue-doppelgaenger-server-macos-amd64
 
+      - name: Fetch static server binary (linux-aarch64)
+        uses: actions/download-artifact@v3
+        # we build the aarch64 binaries only when doing releases
+        #if: (needs.prepare.outputs.release == 'true')
+        with:
+          name: drogue-doppelgaenger-server-linux-aarch64
+          path: drogue-doppelgaenger-server-linux-aarch64
+
       - name: Rename static server binaries
         run: |
           mkdir server-binaries
           mv drogue-doppelgaenger-server-linux-amd64/drogue-doppelgaenger-server server-binaries/drogue-doppelgaenger-server-linux-amd64
+          mv drogue-doppelgaenger-server-macos-amd64/drogue-doppelgaenger-server server-binaries/drogue-doppelgaenger-server-macos-amd64
+
+      - name: Rename static server binaries (aarch64)
+        # we build the aarch64 binaries only when doing releases
+        #if: (needs.prepare.outputs.release == 'true')
+        run: |
           mv drogue-doppelgaenger-server-macos-amd64/drogue-doppelgaenger-server server-binaries/drogue-doppelgaenger-server-macos-amd64
 
       - name: Load images in podman
