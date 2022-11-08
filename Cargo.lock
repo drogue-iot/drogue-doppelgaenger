@@ -595,9 +595,9 @@ dependencies = [
 
 [[package]]
 name = "cloudevents-sdk"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38c036aa864420e0e684386a979f1847e8e170d3bfa8375b0675132bc8ab46b4"
+checksum = "9cdcf727db26626ad9117c83e986ba6afba0c3c0e38eae5f5035adda3ab0c0e6"
 dependencies = [
  "base64 0.12.3",
  "bitflags",
@@ -608,7 +608,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "url",
- "uuid 0.8.2",
+ "uuid",
  "web-sys",
 ]
 
@@ -1135,7 +1135,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "url",
- "uuid 1.2.1",
+ "uuid",
 ]
 
 [[package]]
@@ -1216,7 +1216,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing-actix-web",
- "uuid 1.2.1",
+ "uuid",
 ]
 
 [[package]]
@@ -1808,7 +1808,7 @@ dependencies = [
  "serde_json",
  "time 0.3.17",
  "url",
- "uuid 1.2.1",
+ "uuid",
 ]
 
 [[package]]
@@ -2607,7 +2607,7 @@ dependencies = [
  "postgres-protocol",
  "serde",
  "serde_json",
- "uuid 1.2.1",
+ "uuid",
 ]
 
 [[package]]
@@ -3645,7 +3645,7 @@ dependencies = [
  "pin-project",
  "tracing",
  "tracing-opentelemetry",
- "uuid 1.2.1",
+ "uuid",
 ]
 
 [[package]]
@@ -3792,15 +3792,6 @@ dependencies = [
  "idna 0.3.0",
  "percent-encoding",
  "serde",
-]
-
-[[package]]
-name = "uuid"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
-dependencies = [
- "getrandom",
 ]
 
 [[package]]
