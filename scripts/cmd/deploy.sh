@@ -196,3 +196,6 @@ progress "🥳 Deployment ready!"
 
 progress "  API:             ${API_URL}"
 progress "  Single Sign On:  ${SSO_URL}"
+if [[ -n "${DEBUGGER_URL}" ]]; then
+progress "  Debugger:        ${DEBUGGER_URL}"
+fi
