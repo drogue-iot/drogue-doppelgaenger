@@ -32,3 +32,5 @@ And then, run the local server binary:
 cd server
 cargo run
 ----
++
+TIP: If you use the link:https://book.drogue.io/drogue-cloud/dev/admin-guide/bare-metal.html[Drogue Cloud Server] single binary instead of the sandbox, you can re-use the Kafka, Keycloak and PostgreSQL services.
