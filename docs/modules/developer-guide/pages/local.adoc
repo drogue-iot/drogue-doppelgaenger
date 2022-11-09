@@ -25,12 +25,12 @@ need to provide a unique ID here yourself.
 <4> Consumes from the publicly available `drogue-public-temperature` application.
 <5> Uncomment to enable tracing with Jaeger. Can be used combination with the `develop/compose-health.yaml` deployment.
 
-And then, run the local server binary:
+== Run the local server
 
 [source,shell]
 ----
 cd server
 cargo run
 ----
-+
+
 TIP: If you use the link:https://book.drogue.io/drogue-cloud/dev/admin-guide/bare-metal.html[Drogue Cloud Server] single binary instead of the sandbox, you can re-use the Kafka, Keycloak and PostgreSQL services.

@@ -1,0 +1,10 @@
+= User Guide
+
+The focus on this guide is the _usage_ of Doppelgänger, which covers interaction with the system to perform tasks like:
+
+* Creating _things_ using the REST API.
+* Publishing data that gets mapped to _things_.
+* Viewing the state of your _things_.
+* Setting desired state of _things_ that gets reconciled.
+
+include::ROOT:partial$concepts.adoc[]

@@ -1,0 +1,11 @@
+== Concepts
+
+Some concepts used in this documentation are:
+
+Application:: A group of resources which belong together, isolating it from others.
+
+Thing:: A "digital" (or virtual) thing, which is being represented by Doppelgaenger. It is part of exactly one
+application. This doesn't necessarily map to a device directly, but maybe to some part of the device.
++
+While there exist no hard references between things, it is possible to use soft references (pointers) which reference
+other things. With this, it is possible to establish relationships (like parent/child, groups, …) between things.
