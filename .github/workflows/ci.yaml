@@ -362,6 +362,11 @@ jobs:
             -s drogueCloudTwin.defaults.images.pullPolicy=Never
         timeout-minutes: 30
 
+      - name: Add test tools
+        run: |
+          sudo apt update
+          sudo apt install -y httpie
+
       - name: Run some basic tests
         run: |
           ./.github/scripts/basic-tests.sh
