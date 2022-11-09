@@ -9,10 +9,10 @@ eval "$("${BASEDIR}/../../scripts/drgadm" endpoints)"
 # get OAuth token
 
 SECRET=$(kubectl -n drogue-doppelgaenger get secret keycloak-client-secret-services -o json | jq -r .data.CLIENT_SECRET | base64 -d)
-TOKEN=$(http --form POST "$SSO_URL/realms/doppelgaenger/protocol/openid-connect/token" grant_type=client_credentials client_id=services "client_secret=$SECRET")
+TOKEN=$(http --ignore-stdin --form POST "$SSO_URL/realms/doppelgaenger/protocol/openid-connect/token" grant_type=client_credentials client_id=services "client_secret=$SECRET")
 echo "Token: $TOKEN"
 
-HTTP_OPTS="-A bearer -a $(echo "$TOKEN" | jq -r .access_token)"
+HTTP_OPTS="--ignore-stdin -A bearer -a $(echo "$TOKEN" | jq -r .access_token)"
 
 # do some basic stuff
 
