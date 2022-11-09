@@ -1,0 +1,82 @@
+= Getting started
+
+This document covers getting a basic setup started in combination with Drogue Cloud. You will learn how to:
+
+* Create a device in Drogue Cloud and have its reported state synchronized to Drogue Dopplegänger.
+* Configuring a desired state of the device in Drogue Dopplegänger and have it reconcile this with the device.
+
+== Prerequisites
+
+* A link:https://book.drogue.io/drogue-cloud/dev/index.html[Drogue Cloud] instance.
+* A xref:developer-guide:index.adoc[Drogue Dopplegänger] instance connected to Drogue Cloud.
+* The link:https://github.com/drogue-iot/drg[drg] command line utility.
+* The link:https://httpie.io/[httpie] command line utility.
+* The link:https://stedolan.github.io/jq/[jq] command line utility.
+* The link:https://github.com/vi/websocat[websocat] command line utility.
+
+The Drogue Dopplegänger is assumed to run locally, but you can also use a remote instance as long as you replace the hostnames and ports accordingly.
+
+== Configuration
+
+Configuring the system involves several commands that interact with Drogue Cloud and Drogue Dopplegänger. In this section we will:
+
+* Create an application and a device in Drogue Cloud
+* Create a _thing_ in Drogue Dopplegänger for that device
+
+=== Configuring Drogue Cloud
+
+Follow the xref:drogue-cloud:user-guide:management.adoc[Drogue Cloud User Guide] for creating an application and a device in Drogue Cloud.
+
+NOTE: The rest of this guide will assume you have an application named `example-app` and a device named `device1`. Replace any occurences of these with the names you have selected.
+
+=== Configuring Drogue Doppelgänger
+
+.Procedure
+
+. Get a fresh OAuth token:
++
+[source,shell]
+----
+TOKEN=$(http --form POST localhost:8081/realms/doppelgaenger/protocol/openid-connect/token grant_type=client_credentials client_id=services client_secret=bfa33cd2-18bd-11ed-a9f9-d45d6455d2cc | jq -r .access_token)
+HTTP_OPTS="-A bearer -a $TOKEN"
+----
++
+NOTE: `bfa33cd2-18bd-11ed-a9f9-d45d6455d2cc` is a hardcoded default client secret in `server/src/keycloak.rs`. It will
+only work if run with Keycloak and the `server` binary.
+
+. Create a `thing`:
++
+[source,shell]
+----
+http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"name": "device1/sensor", "application": "default"}'
+----
+
+=== Subscribe to the digital twin state
+
+To subscribe to the digital twin state, we will use the `websocat` utility demonstrating the WebSocket capabilities.
+
+.Procedure
+
+. Open a terminal and observe the device state:
++
+[source,shell]
+----
+websocat -H="Authorization: Bearer $TOKEN" ws://localhost:8080/api/v1alpha1/things/default/things/device1%2Fsensor/notifications
+----
++
+The state will not change until you are sending data from your device.
++
+NOTE: If you get authorization denied, make sure to refresh your token again (see the first step).
+
+=== Simulating a device
+
+. Open another terminal and simulate telemetry data from your device;
++
+[source,shell]
+----
+echo '{"state":{"temperature": 42}}' | http --auth 'device1@example-app:hey-rodney' POST http://localhost:8088/v1/sensor ct=30
+----
++
+NOTE: The command will wait for 30 seconds before returning, in case the twin has a command for it
++
+The event from the "device" should now be appearing in the other terminal.

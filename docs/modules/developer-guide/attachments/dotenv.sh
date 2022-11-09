@@ -31,7 +31,10 @@ INJECTOR__DISABLED=false # <1>
 GROUP="${USER}-${HOSTNAME}" # <2>
 INJECTOR__SOURCE__MQTT__HOST=mqtt-integration.sandbox.drogue.cloud # <3>
 INJECTOR__SOURCE__MQTT__PORT=443
-INJECTOR__SOURCE__MQTT__TOPIC=\$share/${GROUP}/app/drogue-public-temperature # <4>
+# TODO: modify these if you're using a non-public app
+#INJECTOR__SOURCE__MQTT__USERNAME=<user>
+#INJECTOR__SOURCE__MQTT__PASSWORD=<token>
+INJECTOR__SOURCE__MQTT__TOPIC=\$share/${GROUP}/app/example-app # <4>
 INJECTOR__METADATA_MAPPER__TYPE=raw
 INJECTOR__METADATA_MAPPER__OVERRIDE_APPLICATION=default
 INJECTOR__PAYLOAD_MAPPER__TYPE=simpleJson
@@ -39,6 +42,9 @@ INJECTOR__PAYLOAD_MAPPER__ADD_TIMESTAMP=true
 
 COMMAND_SINK__HOST=mqtt-integration.sandbox.drogue.cloud
 COMMAND_SINK__PORT=443
+# TODO: modify these if you're using a non-public app
+#COMMAND_SINK__USERNAME=<user>
+#COMMAND_SINK__PASSWORD=<token>
 
 HTTP__DISABLE_TLS=true
 RUNTIME__CONSOLE_METRICS__ENABLED=true
