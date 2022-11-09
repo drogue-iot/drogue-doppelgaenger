@@ -242,6 +242,14 @@ impl DesiredReconciler for model::Command {
             }
         });
 
+        let device = context
+            .new_thing
+            .metadata
+            .annotations
+            .get("drogue.io/device")
+            .unwrap_or(&context.new_thing.metadata.name)
+            .clone();
+
         match encoding {
             CommandEncoding::Remap { device, channel } => {
                 context
@@ -249,17 +257,14 @@ impl DesiredReconciler for model::Command {
                     .push_channel(device, channel, input.name.to_string(), input.value);
             }
             CommandEncoding::Channel(channel) => {
-                context.commands.push_channel(
-                    context.new_thing.metadata.name.clone(),
-                    channel,
-                    input.name.to_string(),
-                    input.value,
-                );
+                context
+                    .commands
+                    .push_channel(device, channel, input.name.to_string(), input.value);
             }
             CommandEncoding::Raw => {
                 context.commands.push_command(command::Command {
                     application: context.new_thing.metadata.application.clone(),
-                    device: context.new_thing.metadata.name.clone(),
+                    device,
                     channel: input.name.to_string(),
                     payload: serde_json::to_vec(&input.value)?,
                 });
