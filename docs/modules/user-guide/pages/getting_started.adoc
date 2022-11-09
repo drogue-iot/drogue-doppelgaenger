@@ -48,7 +48,7 @@ only work if run with Keycloak and the `server` binary.
 +
 [source,shell]
 ----
-http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"name": "device1/sensor", "application": "default"}'
+http $HTTP_OPTS POST localhost:8080/api/v1alpha1/things metadata:='{"name": "device1/sensor", "application": "example-app", "annotations": {"drogue.io/device", "device1"}}'
 ----
 
 === Subscribe to the digital twin state
@@ -61,7 +61,7 @@ To subscribe to the digital twin state, we will use the `websocat` utility demon
 +
 [source,shell]
 ----
-websocat -H="Authorization: Bearer $TOKEN" ws://localhost:8080/api/v1alpha1/things/default/things/device1%2Fsensor/notifications
+websocat -H="Authorization: Bearer $TOKEN" ws://localhost:8080/api/v1alpha1/things/example-app/things/device1%2Fsensor/notifications
 ----
 +
 The state will not change until you are sending data from your device.
@@ -74,9 +74,80 @@ NOTE: If you get authorization denied, make sure to refresh your token again (se
 +
 [source,shell]
 ----
-echo '{"state":{"temperature": 42}}' | http --auth 'device1@example-app:hey-rodney' POST http://localhost:8088/v1/sensor ct=30
+echo '{"temperature": 42}' | http --auth 'device1@example-app:hey-rodney' POST http://localhost:8088/v1/sensor?ct=30
 ----
 +
 NOTE: The command will wait for 30 seconds before returning, in case the twin has a command for it
 +
 The event from the "device" should now be appearing in the other terminal.
+
+=== Setting the desired state
+
+Setting the desired state is a way for the digital twin to send commands to a device until the device actual state matches the desired state. This is useful in control applications, where you need to continuously monitor the device and adjust.
+
+.Procedure
+
+. Create a command reconciled desired state:
++
+[source,shell]
+----
+echo '{"method": {"command": {"period":"5s"}}}'| http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/example-app/things/device1%2Fsensor/desiredStates/temperature
+----
+
+. Set the desired value (ensure it is currently not already `23`):
++
+[source,shell]
+----
+http $HTTP_OPTS PUT localhost:8080/api/v1alpha1/things/example-app/things/device1%2Fsensor/desiredStates/temperature?value:=23
+----
++
+Now check the state with a `GET`. You should see that the reconciliation state is `reconciling` and it is waiting for
+the report of the state to match the desired value:
++
+[source,json]
+----
+{
+    "desiredState": {
+        "temperature": {
+            "lastUpdate": "2022-07-29T08:14:45.072140510Z",
+            "method": "external",
+            "reconciliation": {
+                "state": "reconciling"
+            },
+            "value": 23
+        }
+    }
+}
+----
++
+If you have a device running or is running the simulated device, it will receive the command with the desired state payload.
+
+. Simulate the device reporting back the desired temperature value:
++
+[source,shell]
+----
+echo '{"temperature": 23}' | http --auth 'device1@example-app:hey-rodney' POST http://localhost:8088/v1/sensor?ct=30
+----
+
+. Perform the `GET` operation again (try it multiple times in case the device has not been processed yet):
++
+[source,json]
+----
+{
+    "desiredState": {
+        "temperature": {
+            "lastUpdate": "2022-07-29T08:14:45.072140510Z",
+            "method": "external",
+            "reconciliation": {
+                "state": "succeeded",
+                "when": "2022-07-29T08:14:59.579334005Z"
+            },
+            "value": 23
+        }
+    }
+}
+----
++
+By default, the mode is `Sync`, which means that the system expects the state to stay with the desired state. If the device deviates from this state, the command will again be sent to the device.
++
+NOTE: It will try to reconcile only for as long as the desired value is valid. Once it expired, it no longer tries.
