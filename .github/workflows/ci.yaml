@@ -363,6 +363,8 @@ jobs:
         timeout-minutes: 30
 
       - name: Add test tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt update
           sudo apt install -y httpie
