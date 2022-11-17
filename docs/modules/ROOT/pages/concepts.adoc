@@ -1,0 +1,249 @@
+= Concepts
+
+This section explains some basic concepts of Doppelgaenger.
+
+NOTE: In the following sections YAML is being used to represent data. However, this is just to make it more readable.
+Internally, JSON is used as a representation.
+
+== Entities
+
+Application:: A group of resources which belong together, isolating it from others.
+
+Thing:: A "digital" (or virtual) thing, which is being represented by Doppelgaenger.It is part of exactly one
+application.This doesn't necessarily map to a device directly, but maybe to some part of the device.
++
+While there exist no hard references between things, it is possible to use soft references (pointers) which reference
+other things.With this, it is possible to establish relationships (like parent/child, groups, …) between things.
+
+Properties:: "Properties", or "Features" of a thing.Each thing can have any number of properties.
+
+[#the_anatomy_of_a_thing]
+== The anatomy of a thing
+
+A thing consists of:
+
+ID:: A unique identifier for a thing.The ID is unique as part of an application.The combination of application ID
+and thing ID makes it unique in a Doppelgaenger instance.
+
+Metadata:: Additional metadata, similar to the Kubernetes metadata structure.But not guaranteed to follow the same
+semantics.
+
+Reported properties:: These are properties which are reported from an external system.The intention is, that these
+are the values/measurements taken by devices, and reported to the higher level systems (like Doppelgaenger).
++
+Reported properties have a name, a "last updated" timestamp, and a value.
+
+Synthetic properties:: These are properties which are "artificially" generated, mainly based on reported properties.
++
+Synthetics properties, same as the reported properties, have a name, a "last updated" timestamp, and a value.
+Additionally, they also have a configured logic, describing the logic generating the value.
++
+Simple use-cases are: renaming of properties (e.g. `bat` => `battery`), extracting values from other properties (`{"battery": {"level": 1.23}}` => `{"batteryLevel": 1.23}`), transforming values (e.g. convert degree Fahrenheit to
+Celsius).
+
+Desired properties:: These are properties which declare a desired state of a reported or synthetic property. This is
+intended for synchronizing a state back to the device, reporting the values.
++
+Synthetics properties, same as the reported properties, have a name, a "last updated" timestamp, and a value.
+Additionally, they also have a configured method of reconciling the desired vs actual state.
++
+The intention is to generate commands, which are sent back to the device feeding the thing state, triggering a state
+change.
+
+Schema:: A thing can have an optional JSON schema attached. A schema will ensure that any mutation of the thing will
+either validate against the schema, or fail the operation.
+
+Reconciliation:: Certain events on the thing can trigger additional actions. These actions are intended to
+be custom code, provided by the user. Currently, the following events are available: state change, request to delete,
+timer expired.
+
+[TIP]
+====
+The full JSON schema of a xref:api:schemas.adoc#_thing[Thing] can be found in the xref:api:schemas.adoc[] section. Please note that this currently also includes internal information.
+====
+
+== Properties
+
+As mentioned in <<the_anatomy_of_a_thing>>, there are three types of properties: reported, synthetic, and desired.
+
+What they have in common is: a name, a "last updated" timestamp, and a value.
+
+=== Name
+
+The name of a property is unique, but not across property this. Meaning: a thing can have a property named
+`temperature` in the reported, synthetic, and desired map.
+
+This is simple in the case of the desired property, as it declares the state this property "should have". So it
+"amends" the reported/synthetic value.
+
+However, for the reported and synthetic state, there might be an overlap. This is intentional, and allows the consuming
+application to chose which value it evaluates. By default, the rule should be to use the synthetic value over the
+reported value. Still, in same cases it is important to have the original value available.
+
+=== Last updated
+
+[NOTE]
+====
+This is actually badly named at the moment. Timestamps are like good naming, difficult.
+
+Right name, the name is "last updated", but indeed it is "last time the value changed", and "changed" meaning it
+differed from the previous value. And update to the same value, would not change the timestamp.
+
+This is because only changes in the thing state are considered a change. And so, the property is not considered updated.
+
+Maybe this will change in the future, into something like: last reported and last changed. But this needs more
+consideration.
+====
+
+=== Value
+
+This can be any JSON value. It can be a scalar JSON value (like a boolean, or a string), or it can be an array or object.
+It can also be `null`.
+
+The thing schema can be used to enforce what the value should look like.
+
+== State & Reconciliation
+
+Any change to the thing (reported state or configuration) works as follows:
+
+* Load the current state
+* Apply the change
+* Run the required reconciliation
+* If the thing changed{empty}footnote:[A custom code snipping sending an event is a change too], persist the new state, and send events
+
+== Outgoing events
+
+Things can send out events to other things during reconciliation. This allows things to initiate changes on other
+things, based on its own state.
+
+For example, this can be used to evaluate a level threshold of a value, and based on this, add/remove itself from the
+list of references of another thing. Creating a group of things violating a threshold condition.
+
+== Keeping it simple
+
+A key goal of Doppelgaenger is, to rely on basic building blocks. Allowing higher level features being created on top
+of this. This section will give a few examples what is mean by this.
+
+The idea is to reduce complexity in the code base, by not creating highly specialized functionalities. And offer
+more flexibility by not being too opinionated. However, not being opinionated, doesn't mean we do don't provide
+such functionality. It just isn't an atomic feature in the code base.
+
+=== Soft references
+
+There are no relationships between things, other than the fact that things belong to a single application
+(has-a/composition relationship).
+
+However, as things do have an identifier, it is of course possible to create a reference to another thing.
+
+=== Parent/Child relationship
+
+A pattern used by the project is for example to declare a parent/child relationship between things using soft
+references:
+
+[source,yaml]
+----
+---
+metadata:
+  name: thing1 # <1>
+  application: app1
+reportedState:
+  "$children":
+    value:
+      "thing1/component1": {} # <2>
+      "thing1/component2": {} # <2>
+---
+metadata:
+  name: thing1/component1
+  application: app1
+reportedState:
+  "$parent":
+    value: "thing1" # <3>
+---
+metadata:
+  name: thing1/component2
+  application: app1
+reportedState:
+  "$parent":
+    value: "thing1" # <3>
+----
+<1> ID of thing parent thing
+<2> Child references
+<3> Back-references to parent
+
+The convention used is simple. A parent lists its children under a `$children` property. While children lists its
+parent under a `$parent` property.
+
+The `$parent` property uses a `string` type value, as it may only have one parent. While the `$children` property uses
+a map of empty objects, implementing a "set" type for faster processing and uniqueness of entries.
+
+=== Complex model tree
+
+As the parent/child approach can be stacked multiple times, it is actually possible to create a complete tree of things.
+
+This can also be used to provide a structure for other technologies, which rely on a structure like this. A
+Doppelgaenger configuration like this, can easily be translated into an OPC UA data model. Exposing things and
+properties through different kind of OPC UA nodes.
+
+=== Grouping of things
+
+The parent/child example was using a bidirectional approach to create a tree. Sometimes however, it is enough to just
+have a forward reference.
+
+Assuming the goal is to have a list of things which violate a certain condition, like a temperature threshold. This can
+be done:
+
+* Defining a synthetic value to evaluate the condition (actual thing)
+* Creating a thing to list all things violating the condition (group thing)
+* When the thing violates the condition, send an event to the group thing, listing itself
+* When the thing stops violating the condition, send an event to remove itself from the group thing
+
+This may look something like this:
+
+NOTE: This is a highly simplified example to illustrate the use case.
+
+[source,yaml]
+----
+---
+metadata:
+  name: warnings/temperature # <1>
+  application: app1
+reportedState:
+  $things:
+    value:
+      "thing1/component1": {} # <2>
+---
+metadata:
+  name: thing1/component1 # <2>
+  application: app1
+reportedState:
+  temperature:
+    value: 120
+syntheticState:
+  temperatureWarning:
+    value: true # <3>
+    code: # <4>
+      javaScript: |
+        context.newState.reportedState?.["temperature"]?.value > 100
+reconciliation:
+  changed:
+    temperatureWarning:
+      code: # <5>
+        javaScript: |
+          whenValueChanged("temperatureWarning", (value) => {
+            const $ref = context.newState.metadata.name;
+            const group = "warnings/temperature";
+            if (value) {
+              // add
+              sendMerge(group, {reportedState: {"$refs": { value: { [$ref]: {} }}}});
+            } else {
+              // set to null -> remove
+              sendMerge(group, {reportedState: {"$refs": { value: { [$ref]: null }}}});
+            }
+          })
+----
+<1> ID of the group thing
+<2> ID of the actual thing
+<3> State of the condition
+<4> Code to evaluate the condition
+<5> Code the register/unregister the actual thing with the group thing
+

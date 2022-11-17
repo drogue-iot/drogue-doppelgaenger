@@ -1,1 +1,3 @@
 * xref:index.adoc[Overview]
+** xref:concepts.adoc[Concepts]
+** xref:architecture.adoc[Architecture]

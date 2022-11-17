@@ -4,14 +4,16 @@ Doppelgänger is mainly a Rust based project, with code located in the same repo
 splitting up the different component into different crates. The following sections should give you an overview and
 enable you to navigate the project.
 
-For an introduction to the higher level architecture, see the xref:ROOT:index.adoc[]
+== Basic concepts & architecture
 
-include::ROOT:partial$concepts.adoc[]
+In the xref:ROOT:index.adoc[Overview] section, you will find chapters about the xref:ROOT:concepts.adoc[] and
+xref:ROOT:architecture.adoc[]. Be sure to get a basic understanding of Doppelgaenger before reading this document.
 
 == Internal Architecture
 
-The illustration above showed the main components of the default deployment. However internally, Doppelgaenger is
-a bit more modular, which allows for other deployment models, such as the "single server binary".
+The illustration in the xref:ROOT:architecture.adoc[] section showed the main components of the default deployment.
+However, internally Doppelgaenger is a bit more modular, which allows for other deployment models, such as the
+"single server binary".
 
 Most of the internal components are located in the `core` crate. The other projects only set up a suitable process and
 container image.
@@ -85,5 +87,5 @@ though.
 The cake is a lie!
 --
 
-Currently a folder for a frontend exists, but it isn't being used. However, there is a `debugger` folder, which
+Currently, a folder for a frontend exists, but it isn't being used. However, there is a `debugger` folder, which
 provides kind of an "explorer" web application, to browse through the data of things.

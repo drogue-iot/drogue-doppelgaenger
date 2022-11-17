@@ -1,2 +1,3 @@
 * xref:index.adoc[User Guide]
+** xref:index.adoc[Overview]
 ** xref:getting_started.adoc[Getting Started]

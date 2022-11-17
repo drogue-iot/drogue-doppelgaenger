@@ -7,4 +7,7 @@ The focus on this guide is the _usage_ of Doppelgänger, which covers interactio
 * Viewing the state of your _things_.
 * Setting desired state of _things_ that gets reconciled.
 
-include::ROOT:partial$concepts.adoc[]
+== Basic concepts
+
+In the xref:ROOT:index.adoc[Overview] section, you will find chapters about the xref:ROOT:concepts.adoc[] and
+xref:ROOT:architecture.adoc[]. Be sure to get a basic understanding of Doppelgaenger before reading this document.
