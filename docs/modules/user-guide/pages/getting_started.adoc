@@ -2,8 +2,8 @@
 
 This document covers getting a basic setup started in combination with Drogue Cloud. You will learn how to:
 
-* Create a device in Drogue Cloud and have its reported state synchronized to Drogue Dopplegänger.
-* Configuring a desired state of the device in Drogue Dopplegänger and have it reconcile this with the device.
+* Create a device in Drogue Cloud and have its reported state synchronized to Drogue Doppelgänger.
+* Configuring a desired state of the device in Drogue Doppelgänger and have it reconcile this with the device.
 
 == Prerequisites
 
@@ -18,16 +18,16 @@ The Drogue Dopplegänger is assumed to run locally, but you can also use a remot
 
 == Configuration
 
-Configuring the system involves several commands that interact with Drogue Cloud and Drogue Dopplegänger. In this section we will:
+Configuring the system involves several commands that interact with Drogue Cloud and Drogue Doppelgänger. In this section we will:
 
 * Create an application and a device in Drogue Cloud
-* Create a _thing_ in Drogue Dopplegänger for that device
+* Create a _thing_ in Drogue Doppelgänger for that device
 
 === Configuring Drogue Cloud
 
 Follow the xref:drogue-cloud:user-guide:management.adoc[Drogue Cloud User Guide] for creating an application and a device in Drogue Cloud.
 
-NOTE: The rest of this guide will assume you have an application named `example-app` and a device named `device1`. Replace any occurences of these with the names you have selected.
+NOTE: The rest of this guide will assume you have an application named `example-app` and a device named `device1`. Replace any occurrences of these with the names you have selected.
 
 === Configuring Drogue Doppelgänger
 
