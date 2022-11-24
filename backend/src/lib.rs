@@ -30,7 +30,7 @@ use drogue_doppelgaenger_core::{
     listener::KafkaSource,
     notifier::{kafka, Notifier},
     processor::sink::{self, Sink},
-    service::{self, Service},
+    service::{self, DefaultService},
     storage::{postgres, Storage},
     PROJECT,
 };
@@ -71,7 +71,7 @@ pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
     startup: &mut dyn Startup,
     config: Config<S, N, Si, Cmd>,
 ) -> anyhow::Result<impl Fn(&mut web::ServiceConfig) + Send + Sync + Clone> {
-    let service = Service::from_config(startup, config.service)?;
+    let service = DefaultService::from_config(startup, config.service)?;
     let service = web::Data::new(service);
 
     let source = KafkaSource::new(startup, config.listener)?;

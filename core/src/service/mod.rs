@@ -2,6 +2,7 @@ mod error;
 mod id;
 mod updater;
 
+use async_trait::async_trait;
 pub use error::*;
 pub use id::Id;
 pub use updater::*;
@@ -58,7 +59,24 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Clone for Config<St,
 
 pub const POSTPONE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 
-pub struct Service<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> {
+#[async_trait]
+pub trait Service {
+    type Error: std::error::Error;
+
+    async fn create(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Self::Error>;
+    async fn get(&self, id: &Id) -> Result<Option<Thing<Internal>>, Self::Error>;
+    async fn delete(&self, id: &Id, opts: Option<&Preconditions<'_>>) -> Result<bool, Self::Error>;
+    async fn update<U>(
+        &self,
+        id: &Id,
+        updater: &U,
+        opts: &UpdateOptions,
+    ) -> Result<Thing<Internal>, Self::Error>
+    where
+        U: Updater + Sync;
+}
+
+pub struct DefaultService<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> {
     storage: St,
     notifier: No,
     sink: Si,
@@ -76,7 +94,7 @@ pub enum OutboxState {
     Retry,
 }
 
-impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, Cmd> {
+impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> DefaultService<St, No, Si, Cmd> {
     pub fn from_config(
         startup: &mut dyn Startup,
         config: Config<St, No, Si, Cmd>,
@@ -106,252 +124,6 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
 
     pub fn sink(&self) -> &Si {
         &self.sink
-    }
-
-    #[instrument(skip_all, err)]
-    pub async fn create(
-        &self,
-        thing: Thing<Internal>,
-    ) -> Result<Thing<Internal>, Error<St, No, Cmd>> {
-        let Outcome {
-            mut new_thing,
-            outbox,
-            commands,
-        } = Machine::create(thing).await?;
-
-        OUTBOX_EVENTS.inc_by(outbox.len() as u64);
-        Self::add_outbox(&mut new_thing, outbox);
-
-        let new_thing = self
-            .storage
-            .create(new_thing)
-            .await
-            .map_err(Error::Storage)?;
-
-        // we can send the events right away, as we created the entry
-
-        let new_thing = self.send_and_ack(new_thing).await?;
-
-        // send commands
-
-        self.command_sink
-            .send_commands(commands)
-            .await
-            .map_err(Error::Command)?;
-
-        // notify
-
-        self.notifier
-            .notify(&new_thing)
-            .await
-            .map_err(Error::Notifier)?;
-
-        // FIXME: handle error
-
-        log::debug!("New thing created: {new_thing:?}");
-
-        // done
-
-        Ok(new_thing)
-    }
-
-    #[instrument(skip(self), err)]
-    pub async fn get(&self, id: &Id) -> Result<Option<Thing<Internal>>, Error<St, No, Cmd>> {
-        self.storage
-            .get(&id.application, &id.thing)
-            .await
-            .or_else(|err| match err {
-                storage::Error::NotFound => Ok(None),
-                _ => Err(err),
-            })
-            .map_err(Error::Storage)
-    }
-
-    pub async fn delete(
-        &self,
-        id: &Id,
-        opts: Option<&Preconditions<'_>>,
-    ) -> Result<bool, Error<St, No, Cmd>> {
-        // get the current thing
-
-        log::debug!("Deleting thing: {id}");
-
-        let mut thing = match self.storage.get(&id.application, &id.thing).await {
-            Ok(Some(thing)) => thing,
-            // not found, we are done here
-            Err(storage::Error::NotFound) | Ok(None) => return Ok(false),
-            Err(err) => return Err(Error::Storage(err)),
-        };
-
-        if let Some(opts) = opts {
-            if !opts.matches(&thing) {
-                return Err(Error::Storage(storage::Error::PreconditionFailed));
-            }
-        }
-
-        if thing.metadata.deletion_timestamp.is_some() {
-            // already marked as deleted
-            return Ok(false);
-        }
-
-        let original_empty = thing
-            .internal
-            .as_ref()
-            .map(|internal| internal.outbox.is_empty())
-            .unwrap_or(true);
-
-        // mark deleted
-        thing.metadata.deletion_timestamp = Some(Utc::now());
-
-        // run machine for deletion
-        let DeletionOutcome { mut thing, outbox } = Machine::delete(thing).await?;
-        // add outbox
-        Self::add_outbox(&mut thing, outbox);
-        // check if the thing's outbox contains events
-        if !thing.outbox().is_empty() {
-            // if so, store, which also stores the deletion marker
-            thing = self.storage.update(thing).await.map_err(Error::Storage)?;
-            // from here on, we are marked deleted and need to re-process if we fail with the next step
-            if original_empty {
-                // it was originally empty, so we can send and ack, otherwise the waker will
-                // trigger (and delete) us later
-                thing = self.send_and_ack(thing).await?;
-            }
-        }
-
-        if thing.outbox().is_empty() {
-            // if the outbox is empty, delete
-            self.storage
-                .delete_with(
-                    &id.application,
-                    &id.thing,
-                    Preconditions {
-                        resource_version: thing.metadata.resource_version.as_deref(),
-                        uid: thing.metadata.uid.as_deref(),
-                    },
-                )
-                .await
-                .or_else(|err| match err {
-                    // if we didn't find what we want to delete, this is just fine
-                    storage::Error::NotFound => Ok(false),
-                    err => Err(Error::Storage(err)),
-                })?;
-        }
-
-        // notify
-        self.notifier
-            .notify(&thing)
-            .await
-            .map_err(Error::Notifier)?;
-
-        // done
-        Ok(true)
-    }
-
-    #[instrument(skip(self, updater), err)]
-    pub async fn update<U>(
-        &self,
-        id: &Id,
-        updater: &U,
-        opts: &UpdateOptions,
-    ) -> Result<Thing<Internal>, Error<St, No, Cmd>>
-    where
-        U: Updater,
-    {
-        log::debug!("Updating thing: {id}");
-
-        let current_thing = self
-            .storage
-            .get(&id.application, &id.thing)
-            .await
-            .and_then(|r| r.ok_or(storage::Error::NotFound))
-            .map_err(Error::Storage)?;
-
-        if current_thing.metadata.deletion_timestamp.is_some() {
-            tracing::event!(
-                tracing::Level::INFO,
-                deleted = true,
-                since = ?current_thing.metadata.deletion_timestamp
-            );
-            // if we are already deleted, we don't do any more updates. Except processing
-            // outgoing events.
-
-            // check for unprocessed events
-            self.check_unprocessed_events(current_thing, false).await?;
-
-            // returned with "ok", so all events have been processed, we can now delete
-
-            // now return with "not found"
-            return Err(Error::Storage(storage::Error::NotFound));
-        }
-
-        // check for unprocessed events
-        let current_thing = self
-            .check_unprocessed_events(current_thing, opts.ignore_unclean_inbox)
-            .await?;
-
-        let Outcome {
-            mut new_thing,
-            outbox,
-            commands,
-        } = Machine::new(current_thing.clone())
-            .update(|thing| async { updater.update(thing) })
-            .await?;
-
-        OUTBOX_EVENTS.inc_by(outbox.len() as u64);
-        COMMANDS.inc_by(commands.len() as u64);
-        Self::add_outbox(&mut new_thing, outbox);
-
-        // check diff after adding outbox events
-        // TODO: maybe reconsider? if there is no state change? do we send out events? is an event a state change?
-        if current_thing == new_thing {
-            log::debug!("Thing state not changed. Return early!");
-            NOT_CHANGED.inc();
-            // no change, nothing to do
-            return Ok(current_thing);
-        }
-
-        // store
-
-        let mut new_thing = self
-            .storage
-            .update(new_thing)
-            .await
-            .map_err(Error::Storage)?;
-
-        // waker is scheduled by add_outbox before storing
-        let current_outbox = current_thing
-            .internal
-            .as_ref()
-            .map(|i| i.outbox.len())
-            .unwrap_or(0);
-
-        log::debug!("Current outbox size: {}", current_outbox);
-
-        if current_outbox == 0 {
-            // only send when we had no previous events, otherwise we already queued
-            new_thing = self.send_and_ack(new_thing).await?;
-        }
-
-        // send commands
-
-        self.command_sink
-            .send_commands(commands)
-            .await
-            .map_err(Error::Command)?;
-
-        // notify
-
-        self.notifier
-            .notify(&new_thing)
-            .await
-            .map_err(Error::Notifier)?;
-
-        // FIXME: handle failure
-
-        // done
-
-        Ok(new_thing)
     }
 
     /// Add new, scheduled, messages to the outbox, and return the entries to send out.
@@ -542,5 +314,256 @@ impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service<St, No, Si, 
 
         // return result, ready to send events
         Ok((thing, OutboxState::Retry))
+    }
+}
+
+#[async_trait]
+impl<St: Storage, No: Notifier, Si: Sink, Cmd: CommandSink> Service
+    for DefaultService<St, No, Si, Cmd>
+{
+    type Error = Error<St, No, Cmd>;
+
+    #[instrument(skip_all, err)]
+    async fn create(&self, thing: Thing<Internal>) -> Result<Thing<Internal>, Error<St, No, Cmd>> {
+        let Outcome {
+            mut new_thing,
+            outbox,
+            commands,
+        } = Machine::create(thing).await?;
+
+        OUTBOX_EVENTS.inc_by(outbox.len() as u64);
+        Self::add_outbox(&mut new_thing, outbox);
+
+        let new_thing = self
+            .storage
+            .create(new_thing)
+            .await
+            .map_err(Error::Storage)?;
+
+        // we can send the events right away, as we created the entry
+
+        let new_thing = self.send_and_ack(new_thing).await?;
+
+        // send commands
+
+        self.command_sink
+            .send_commands(commands)
+            .await
+            .map_err(Error::Command)?;
+
+        // notify
+
+        self.notifier
+            .notify(&new_thing)
+            .await
+            .map_err(Error::Notifier)?;
+
+        // FIXME: handle error
+
+        log::debug!("New thing created: {new_thing:?}");
+
+        // done
+
+        Ok(new_thing)
+    }
+
+    #[instrument(skip(self), err)]
+    async fn get(&self, id: &Id) -> Result<Option<Thing<Internal>>, Error<St, No, Cmd>> {
+        self.storage
+            .get(&id.application, &id.thing)
+            .await
+            .or_else(|err| match err {
+                storage::Error::NotFound => Ok(None),
+                _ => Err(err),
+            })
+            .map_err(Error::Storage)
+    }
+
+    #[instrument(skip(self), ret, err)]
+    async fn delete(
+        &self,
+        id: &Id,
+        opts: Option<&Preconditions<'_>>,
+    ) -> Result<bool, Error<St, No, Cmd>> {
+        // get the current thing
+
+        log::debug!("Deleting thing: {id}");
+
+        let mut thing = match self.storage.get(&id.application, &id.thing).await {
+            Ok(Some(thing)) => thing,
+            // not found, we are done here
+            Err(storage::Error::NotFound) | Ok(None) => return Ok(false),
+            Err(err) => return Err(Error::Storage(err)),
+        };
+
+        if let Some(opts) = opts {
+            if !opts.matches(&thing) {
+                return Err(Error::Storage(storage::Error::PreconditionFailed));
+            }
+        }
+
+        if thing.metadata.deletion_timestamp.is_some() {
+            // already marked as deleted
+            return Ok(false);
+        }
+
+        let original_empty = thing
+            .internal
+            .as_ref()
+            .map(|internal| internal.outbox.is_empty())
+            .unwrap_or(true);
+
+        // mark deleted
+        thing.metadata.deletion_timestamp = Some(Utc::now());
+
+        // run machine for deletion
+        let DeletionOutcome { mut thing, outbox } = Machine::delete(thing).await?;
+        // add outbox
+        Self::add_outbox(&mut thing, outbox);
+        // check if the thing's outbox contains events
+        if !thing.outbox().is_empty() {
+            // if so, store, which also stores the deletion marker
+            thing = self.storage.update(thing).await.map_err(Error::Storage)?;
+            // from here on, we are marked deleted and need to re-process if we fail with the next step
+            if original_empty {
+                // it was originally empty, so we can send and ack, otherwise the waker will
+                // trigger (and delete) us later
+                thing = self.send_and_ack(thing).await?;
+            }
+        }
+
+        if thing.outbox().is_empty() {
+            // if the outbox is empty, delete
+            self.storage
+                .delete_with(
+                    &id.application,
+                    &id.thing,
+                    Preconditions {
+                        resource_version: thing.metadata.resource_version.as_deref(),
+                        uid: thing.metadata.uid.as_deref(),
+                    },
+                )
+                .await
+                .or_else(|err| match err {
+                    // if we didn't find what we want to delete, this is just fine
+                    storage::Error::NotFound => Ok(false),
+                    err => Err(Error::Storage(err)),
+                })?;
+        }
+
+        // notify
+        self.notifier
+            .notify(&thing)
+            .await
+            .map_err(Error::Notifier)?;
+
+        // done
+        Ok(true)
+    }
+
+    #[instrument(skip(self, updater), err)]
+    async fn update<U>(
+        &self,
+        id: &Id,
+        updater: &U,
+        opts: &UpdateOptions,
+    ) -> Result<Thing<Internal>, Error<St, No, Cmd>>
+    where
+        U: Updater + Sync,
+    {
+        log::debug!("Updating thing: {id}");
+
+        let current_thing = self
+            .storage
+            .get(&id.application, &id.thing)
+            .await
+            .and_then(|r| r.ok_or(storage::Error::NotFound))
+            .map_err(Error::Storage)?;
+
+        if current_thing.metadata.deletion_timestamp.is_some() {
+            tracing::event!(
+                tracing::Level::INFO,
+                deleted = true,
+                since = ?current_thing.metadata.deletion_timestamp
+            );
+            // if we are already deleted, we don't do any more updates. Except processing
+            // outgoing events.
+
+            // check for unprocessed events
+            self.check_unprocessed_events(current_thing, false).await?;
+
+            // returned with "ok", so all events have been processed, we can now delete
+
+            // now return with "not found"
+            return Err(Error::Storage(storage::Error::NotFound));
+        }
+
+        // check for unprocessed events
+        let current_thing = self
+            .check_unprocessed_events(current_thing, opts.ignore_unclean_inbox)
+            .await?;
+
+        let Outcome {
+            mut new_thing,
+            outbox,
+            commands,
+        } = Machine::new(current_thing.clone())
+            .update(|thing| async { updater.update(thing) })
+            .await?;
+
+        OUTBOX_EVENTS.inc_by(outbox.len() as u64);
+        COMMANDS.inc_by(commands.len() as u64);
+        Self::add_outbox(&mut new_thing, outbox);
+
+        // check diff after adding outbox events
+        // TODO: maybe reconsider? if there is no state change? do we send out events? is an event a state change?
+        if current_thing == new_thing {
+            log::debug!("Thing state not changed. Return early!");
+            NOT_CHANGED.inc();
+            // no change, nothing to do
+            return Ok(current_thing);
+        }
+
+        // store
+
+        let mut new_thing = self
+            .storage
+            .update(new_thing)
+            .await
+            .map_err(Error::Storage)?;
+
+        // waker is scheduled by add_outbox before storing
+        let current_outbox = current_thing
+            .internal
+            .as_ref()
+            .map(|i| i.outbox.len())
+            .unwrap_or(0);
+
+        log::debug!("Current outbox size: {}", current_outbox);
+
+        if current_outbox == 0 {
+            // only send when we had no previous events, otherwise we already queued
+            new_thing = self.send_and_ack(new_thing).await?;
+        }
+
+        // send commands
+
+        self.command_sink
+            .send_commands(commands)
+            .await
+            .map_err(Error::Command)?;
+
+        // notify
+
+        self.notifier
+            .notify(&new_thing)
+            .await
+            .map_err(Error::Notifier)?;
+
+        // FIXME: handle failure
+
+        // done
+
+        Ok(new_thing)
     }
 }

@@ -13,9 +13,9 @@ use drogue_doppelgaenger_core::{
     notifier::Notifier,
     processor::{sink::Sink, SetDesiredValue},
     service::{
-        AnnotationsUpdater, DesiredStateUpdate, DesiredStateUpdater, DesiredStateValueUpdater, Id,
-        JsonMergeUpdater, JsonPatchUpdater, Patch, ReportedStateUpdater, Service,
-        SyntheticStateUpdater, UpdateMode, UpdateOptions,
+        AnnotationsUpdater, DefaultService, DesiredStateUpdate, DesiredStateUpdater,
+        DesiredStateValueUpdater, Id, JsonMergeUpdater, JsonPatchUpdater, Patch,
+        ReportedStateUpdater, Service, SyntheticStateUpdater, UpdateMode, UpdateOptions,
     },
     storage::Storage,
 };
@@ -28,7 +28,7 @@ const OPTS: UpdateOptions = UpdateOptions {
 };
 
 pub async fn things_get<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
     Ok(match service.get(&path.into_inner()).await? {
@@ -38,7 +38,7 @@ pub async fn things_get<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
 }
 
 pub async fn things_create<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     payload: web::Json<Thing>,
 ) -> Result<HttpResponse, actix_web::Error> {
     service
@@ -49,7 +49,7 @@ pub async fn things_create<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
 }
 
 pub async fn things_update<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     payload: web::Json<Thing>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let application = payload.metadata.application.clone();
@@ -64,7 +64,7 @@ pub async fn things_update<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
 }
 
 pub async fn things_patch<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<Patch>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -78,7 +78,7 @@ pub async fn things_patch<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
 }
 
 pub async fn things_merge<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<Value>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -92,7 +92,7 @@ pub async fn things_merge<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
 }
 
 pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<BTreeMap<String, Value>>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -110,7 +110,7 @@ pub async fn things_update_reported_state<S: Storage, N: Notifier, Si: Sink, Cmd
 }
 
 pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<(String, String, String)>,
     payload: web::Json<SyntheticType>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -129,7 +129,7 @@ pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink, Cm
 }
 
 pub async fn things_update_desired_state<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<(String, String, String)>,
     payload: web::Json<DesiredStateUpdate>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -154,7 +154,7 @@ pub async fn things_update_desired_state_value<
     Cmd: CommandSink,
 >(
     request: HttpRequest,
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<(String, String, String)>,
     payload: web::Json<Value>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -189,7 +189,7 @@ pub async fn things_update_desired_state_value<
 }
 
 pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<Reconciliation>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -201,7 +201,7 @@ pub async fn things_update_reconciliation<S: Storage, N: Notifier, Si: Sink, Cmd
 }
 
 pub async fn things_update_annotations<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<Id>,
     payload: web::Json<BTreeMap<String, Option<String>>>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -215,7 +215,7 @@ pub async fn things_update_annotations<S: Storage, N: Notifier, Si: Sink, Cmd: C
 }
 
 pub async fn things_delete<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     path: web::Path<Id>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // FIXME: allow adding preconditions
@@ -229,7 +229,7 @@ pub async fn things_notifications<S: Storage, N: Notifier, Si: Sink, Cmd: Comman
     path: web::Path<String>,
     stream: web::Payload,
     source: web::Data<KafkaSource>,
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     instance: web::Data<Instance>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let application = path.into_inner();
@@ -249,7 +249,7 @@ pub async fn things_notifications_single<S: Storage, N: Notifier, Si: Sink, Cmd:
     path: web::Path<(String, String)>,
     stream: web::Payload,
     source: web::Data<KafkaSource>,
-    service: web::Data<Service<S, N, Si, Cmd>>,
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
     instance: web::Data<Instance>,
     user: UserInformation,
 ) -> Result<HttpResponse, actix_web::Error> {

@@ -1,18 +1,17 @@
+mod db;
 mod keycloak;
-
-#[macro_use]
-extern crate diesel_migrations;
 
 use crate::keycloak::SERVICE_CLIENT_SECRET;
 use drogue_bazaar::{
-    actix::http::{CorsBuilder, HttpBuilder, HttpConfig},
+    actix::http::{CorsConfig, HttpBuilder, HttpConfig},
     app::Startup,
     auth::openid::{AuthenticatorClientConfig, AuthenticatorConfig, AuthenticatorGlobalConfig},
     core::SpawnerExt,
     runtime,
 };
 use drogue_doppelgaenger_core::{
-    command,
+    api::az,
+    command::{self, CommandSink},
     config::kafka::KafkaProperties,
     injector, notifier,
     processor::{
@@ -20,7 +19,7 @@ use drogue_doppelgaenger_core::{
         source::{self, Source},
         Processor,
     },
-    service::{self, Service},
+    service::{self, DefaultService},
     storage::postgres,
     waker::{self},
 };
@@ -30,9 +29,6 @@ use rdkafka::{
     config::FromClientConfig,
 };
 use std::{collections::HashMap, time::Duration};
-use tokio::runtime::Handle;
-
-embed_migrations!("../database-migration/migrations");
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Server {
@@ -57,6 +53,10 @@ pub struct Server {
     #[serde(default)]
     injector: Option<injector::Config>,
 
+    /// optional Azure Twin API
+    #[serde(default)]
+    azure: Option<az::Config>,
+
     #[serde(with = "humantime_serde")]
     #[serde(default = "waker::postgres::default::check_duration")]
     check_duration: Duration,
@@ -76,31 +76,6 @@ mod default {
     pub fn application() -> String {
         "default".into()
     }
-}
-
-pub async fn run_migrations(db: &deadpool_postgres::Config) -> anyhow::Result<()> {
-    use diesel::Connection;
-    log::info!("Migrating database schema...");
-    let database_url = format!(
-        "postgres://{}:{}@{}:{}/{}",
-        db.user.as_ref().unwrap(),
-        db.password.as_ref().unwrap(),
-        db.host.as_ref().unwrap(),
-        db.port.unwrap(),
-        db.dbname.as_ref().unwrap()
-    );
-
-    Handle::current()
-        .spawn_blocking(move || {
-            let connection = diesel::PgConnection::establish(&database_url)
-                .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
-
-            embedded_migrations::run_with_output(&connection, &mut std::io::stdout()).unwrap();
-            log::info!("Migrating database schema... done!");
-        })
-        .await?;
-
-    Ok(())
 }
 
 async fn create_topic(config: KafkaProperties, topic: String) -> anyhow::Result<()> {
@@ -123,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
-    run_migrations(&server.storage.db).await.unwrap();
+    db::run_migrations(&server.storage).await.unwrap();
     create_topic(
         KafkaProperties(server.notifier_sink.properties.clone()),
         server.notifier_sink.topic.clone(),
@@ -205,7 +180,7 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
         },
         notifier: server.notifier_sink,
         sink: server.event_sink.clone(),
-        command_sink: server.command_sink,
+        command_sink: server.command_sink.clone(),
     };
     let backend = drogue_doppelgaenger_backend::Config::<
         postgres::Storage,
@@ -232,21 +207,28 @@ async fn run(server: Server, startup: &mut dyn Startup) -> anyhow::Result<()> {
             config.configure(|ctx| configurator(ctx));
         },
     )
-    .cors(CorsBuilder::Permissive)
+    .default_cors(Some(CorsConfig::permissive()))
     .start(startup)?;
 
     // prepare the incoming events processor
 
-    let sink = sink::kafka::Sink::from_config(server.event_sink.clone())?;
     let source = source::kafka::Source::from_config(server.event_source)?;
 
-    if let Some(injector) = server.injector.filter(|injector| !injector.disabled) {
+    if let Some(injector) = server.injector.filter(|config| !config.disabled) {
+        let sink = sink::kafka::Sink::from_config(server.event_sink.clone())?;
         log::info!("Running injector: {injector:?}");
         startup.spawn(injector.run(sink).boxed_local());
     }
 
-    let service = Service::from_config(startup, service)?;
+    if let Some(az) = server.azure.filter(|config| config.enabled) {
+        let sink = sink::kafka::Sink::from_config(server.event_sink.clone())?;
+        let command = command::mqtt::CommandSink::from_config(startup, server.command_sink)?;
+        let service = DefaultService::from_config(startup, service.clone())?;
+        log::info!("Running Azure API: {az:?}");
+        startup.spawn(az.run(sink, command, service).boxed_local());
+    }
 
+    let service = DefaultService::from_config(startup, service)?;
     let processor = Processor::new(service, source).run().boxed();
 
     let waker = waker::Processor::from_config(waker::Config::<

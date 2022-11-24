@@ -1,6 +1,8 @@
+pub mod api;
 pub mod command;
 pub mod config;
 pub mod error;
+pub mod events;
 pub mod injector;
 pub mod kafka;
 pub mod listener;

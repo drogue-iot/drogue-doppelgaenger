@@ -12,7 +12,7 @@ use drogue_doppelgaenger_core::{
     model::{Thing, WakerReason},
     notifier::Notifier,
     processor::{sink::Sink, source::Source, Event, Processor},
-    service::{Id, Service},
+    service::{DefaultService, Id},
     storage::{Error, Storage},
     waker::{self, TargetId, Waker},
     Preconditions,
@@ -354,7 +354,7 @@ pub struct Context {
     pub sink: MockSink,
     pub source: MockSourceFeeder,
     pub notifier: MockNotifier,
-    pub service: Service<MockStorage, MockNotifier, MockSink, MockCommandSink>,
+    pub service: DefaultService<MockStorage, MockNotifier, MockSink, MockCommandSink>,
     pub processor: Processor<MockStorage, MockNotifier, MockSink, MockSource, MockCommandSink>,
     pub waker: waker::Processor<MockWaker, MockSink>,
     pub command_sink: MockCommandSink,
@@ -437,7 +437,7 @@ impl Deref for ContextRunner {
 pub struct RunningContext {
     pub sink: MockSink,
     pub notifier: MockNotifier,
-    pub service: Service<MockStorage, MockNotifier, MockSink, MockCommandSink>,
+    pub service: DefaultService<MockStorage, MockNotifier, MockSink, MockCommandSink>,
     pub runner: ContextRunner,
     pub command_sink: MockCommandSink,
 }
@@ -593,7 +593,7 @@ impl Builder {
         let command_sink = MockCommandSink::new();
 
         let processor = Processor::new(
-            Service::new(
+            DefaultService::new(
                 storage.clone(),
                 notifier.clone(),
                 sink.clone(),
@@ -604,7 +604,7 @@ impl Builder {
 
         let waker = waker::Processor::new(waker, sink.clone());
 
-        let service = Service::new(
+        let service = DefaultService::new(
             storage,
             notifier.clone(),
             sink.clone(),

@@ -1,12 +1,16 @@
 //! Injectors allow to inject events from an external system into the internal Kafka topic
 
 mod mapper;
-mod mqtt;
+pub mod mqtt;
 
 pub use mapper::*;
 
 use crate::{
-    injector::{metadata::MetadataMapper, payload::PayloadMapper},
+    injector::{
+        metadata::MetadataMapper,
+        mqtt::{SinkTarget, Target},
+        payload::PayloadMapper,
+    },
     processor::sink::Sink,
 };
 
@@ -25,9 +29,12 @@ pub struct Config {
 
 impl Config {
     pub async fn run<S: Sink>(self, sink: S) -> anyhow::Result<()> {
-        self.source
-            .run(sink, self.metadata_mapper, self.payload_mapper)
-            .await
+        let target = SinkTarget {
+            sink,
+            metadata_mapper: self.metadata_mapper,
+            payload_mapper: self.payload_mapper,
+        };
+        self.source.run(target).await
     }
 }
 
@@ -38,14 +45,9 @@ pub enum SourceConfig {
 }
 
 impl SourceConfig {
-    pub async fn run<S: Sink>(
-        self,
-        sink: S,
-        metadata_mapper: MetadataMapper,
-        payload_mapper: PayloadMapper,
-    ) -> anyhow::Result<()> {
+    pub async fn run<T: Target>(self, target: T) -> anyhow::Result<()> {
         match self {
-            Self::Mqtt(mqtt) => mqtt.run(sink, metadata_mapper, payload_mapper).await,
+            Self::Mqtt(mqtt) => mqtt.run(target).await,
         }
     }
 }

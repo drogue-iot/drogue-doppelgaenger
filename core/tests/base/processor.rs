@@ -1,6 +1,8 @@
 use crate::common::mock::{setup, RunningContext};
-use drogue_doppelgaenger_core::processor::{Event, Message};
-use drogue_doppelgaenger_core::service::Id;
+use drogue_doppelgaenger_core::{
+    processor::{Event, Message},
+    service::{Id, Service},
+};
 use serde_json::json;
 
 #[tokio::test]

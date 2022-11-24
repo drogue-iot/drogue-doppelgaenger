@@ -1,7 +1,7 @@
 use crate::common::mock::{setup, RunningContext};
 use drogue_doppelgaenger_core::{
     processor::{Event, Message},
-    service::{AnnotationsUpdater, Id, UpdateOptions},
+    service::{AnnotationsUpdater, Id, Service, UpdateOptions},
 };
 use drogue_doppelgaenger_model::{Code, Deleting};
 use serde_json::json;

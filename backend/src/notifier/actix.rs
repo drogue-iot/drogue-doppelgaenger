@@ -10,7 +10,7 @@ use drogue_doppelgaenger_core::{
     listener::{KafkaSource, Message},
     notifier::Notifier,
     processor::{self, sink::Sink, Event},
-    service::{Id, Service},
+    service::{DefaultService, Id, Service},
     storage::Storage,
 };
 use futures::StreamExt;
@@ -44,7 +44,7 @@ mod message {
 pub struct WebSocketHandler<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> {
     heartbeat: Instant,
     listeners: HashMap<Id, SpawnHandle>,
-    service: Arc<Service<S, N, Si, Cmd>>,
+    service: Arc<DefaultService<S, N, Si, Cmd>>,
     source: Arc<KafkaSource>,
     application: String,
     /// Whether or not to just subscribe for a single thing
@@ -53,7 +53,7 @@ pub struct WebSocketHandler<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>
 
 impl<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink> WebSocketHandler<S, N, Si, Cmd> {
     pub fn new(
-        service: Arc<Service<S, N, Si, Cmd>>,
+        service: Arc<DefaultService<S, N, Si, Cmd>>,
         source: Arc<KafkaSource>,
         application: String,
         thing: Option<String>,

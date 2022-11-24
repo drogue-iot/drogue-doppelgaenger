@@ -1,12 +1,13 @@
 use crate::common::mock::{setup, RunningContext};
 use chrono::Utc;
-use drogue_doppelgaenger_core::model::WakerReason;
-use drogue_doppelgaenger_core::service::Id;
+use drogue_doppelgaenger_core::{
+    model::WakerReason,
+    service::{Id, Service},
+};
 use drogue_doppelgaenger_model::{Code, Reconciliation, Thing, Timer};
 use indexmap::IndexMap;
 use serde_json::json;
-use std::collections::BTreeSet;
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
 #[tokio::test]
 async fn test_process() {

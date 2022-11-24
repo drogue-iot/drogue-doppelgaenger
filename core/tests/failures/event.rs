@@ -1,20 +1,22 @@
-use crate::common::mock::{Builder, MockCommandSink, RunningContext};
+use crate::common::{
+    failure::{Failure, Iter},
+    mock::{Builder, MockCommandSink, MockNotifier, MockSink, MockStorage, RunningContext},
+};
 use anyhow::anyhow;
+use drogue_doppelgaenger_core::model::{Changed, Code, Internal, Reconciliation, Thing};
+use drogue_doppelgaenger_core::processor::{Event, Message, ReportStateBuilder};
+use drogue_doppelgaenger_core::service::{
+    DefaultService, Error, Id, Service, UpdateOptions, POSTPONE_DURATION,
+};
 use indexmap::IndexMap;
 use serde_json::json;
 use std::future::Future;
-
-use crate::common::failure::{Failure, Iter};
-use crate::common::mock::{MockNotifier, MockSink, MockStorage};
-use drogue_doppelgaenger_core::model::{Changed, Code, Internal, Reconciliation, Thing};
-use drogue_doppelgaenger_core::processor::{Event, Message, ReportStateBuilder};
-use drogue_doppelgaenger_core::service::{Error, Id, Service, UpdateOptions, POSTPONE_DURATION};
 
 pub struct TestRunner<'t> {
     source: &'t Id,
     target: &'t Id,
     opts: &'t UpdateOptions,
-    service: &'t Service<MockStorage, MockNotifier, MockSink, MockCommandSink>,
+    service: &'t DefaultService<MockStorage, MockNotifier, MockSink, MockCommandSink>,
     notifier: &'t mut MockNotifier,
     sink: &'t mut MockSink,
 }

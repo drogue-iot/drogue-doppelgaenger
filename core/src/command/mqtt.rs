@@ -77,8 +77,9 @@ impl super::CommandSink for CommandSink {
         let topic = self
             .mode
             .build_topic(command.application, command.device, command.channel);
+
         self.client
-            .publish(topic, QoS::AtLeastOnce, false, command.payload)
+            .publish(topic, QoS::AtMostOnce, false, command.payload)
             .await
     }
 }
@@ -93,6 +94,12 @@ impl CommandSink {
                 }
                 Ok(Event::Incoming(Incoming::ConnAck(ack))) => {
                     log::info!("Connection opened: {ack:?}");
+                }
+                Ok(Event::Outgoing(Outgoing::Publish(id))) => {
+                    log::debug!("Published: {id}");
+                }
+                Ok(Event::Incoming(Incoming::PubAck(ack))) => {
+                    log::debug!("PubAck: {ack:?}");
                 }
                 Ok(Event::Incoming(Incoming::PingResp) | Event::Outgoing(Outgoing::PingReq)) => {
                     // ignore
@@ -129,7 +136,8 @@ mod test {
                     username: None,
                     password: None,
                     clean_session: true,
-                    disable_tls: false
+                    disable_tls: false,
+                    insecure: false,
                 },
                 mode: None,
             },
@@ -156,7 +164,8 @@ mod test {
                     username: None,
                     password: None,
                     clean_session: true,
-                    disable_tls: false
+                    disable_tls: false,
+                    insecure: false,
                 },
                 mode: Some(Mode::Drogue { application: None })
             },
@@ -184,7 +193,8 @@ mod test {
                     username: None,
                     password: None,
                     clean_session: true,
-                    disable_tls: false
+                    disable_tls: false,
+                    insecure: false,
                 },
                 mode: Some(Mode::Drogue {
                     application: Some("app".to_string())

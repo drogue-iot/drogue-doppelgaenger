@@ -7,9 +7,9 @@ use crate::{
     notifier::Notifier,
     processor::{sink::Sink, source::Source},
     service::{
-        self, Cleanup, DesiredStateValueUpdater, Id, InfallibleUpdater, JsonMergeUpdater,
-        JsonPatchUpdater, MapValueInserter, MapValueRemover, ReportedStateUpdater, Service,
-        UpdateMode, UpdateOptions, Updater, UpdaterExt,
+        self, Cleanup, DefaultService, DesiredStateValueUpdater, Id, InfallibleUpdater,
+        JsonMergeUpdater, JsonPatchUpdater, MapValueInserter, MapValueRemover,
+        ReportedStateUpdater, Service, UpdateMode, UpdateOptions, Updater, UpdaterExt,
     },
     storage::{self, Storage},
 };
@@ -206,7 +206,7 @@ where
     So: Source,
     Cmd: CommandSink,
 {
-    service: Service<St, No, Si, Cmd>,
+    service: DefaultService<St, No, Si, Cmd>,
     source: So,
 }
 
@@ -222,13 +222,13 @@ where
         startup: &mut dyn Startup,
         config: Config<St, No, Si, So, Cmd>,
     ) -> anyhow::Result<Self> {
-        let service = Service::from_config(startup, config.service)?;
+        let service = DefaultService::from_config(startup, config.service)?;
         let source = So::from_config(config.source)?;
 
         Ok(Self::new(service, source))
     }
 
-    pub fn new(service: Service<St, No, Si, Cmd>, source: So) -> Self {
+    pub fn new(service: DefaultService<St, No, Si, Cmd>, source: So) -> Self {
         Self { service, source }
     }
 
@@ -238,7 +238,7 @@ where
     /// deletion if the updater sets it.
     #[instrument(skip_all, fields(id), err)]
     async fn run_cleanup<U>(
-        service: &Service<St, No, Si, Cmd>,
+        service: &DefaultService<St, No, Si, Cmd>,
         id: &Id,
         updater: U,
     ) -> Result<(), anyhow::Error>
@@ -300,7 +300,7 @@ where
     /// Either update or insert a new thing
     #[instrument(skip_all, fields(id), err)]
     async fn run_upsert<U>(
-        service: &Service<St, No, Si, Cmd>,
+        service: &DefaultService<St, No, Si, Cmd>,
         id: &Id,
         updater: U,
     ) -> Result<(), anyhow::Error>
@@ -358,12 +358,12 @@ where
 
     #[instrument(skip_all, fields(id), err)]
     async fn run_update<U>(
-        service: &Service<St, No, Si, Cmd>,
+        service: &DefaultService<St, No, Si, Cmd>,
         id: &Id,
         updater: U,
     ) -> Result<(), anyhow::Error>
     where
-        U: Updater,
+        U: Updater + Sync,
     {
         let opts = UpdateOptions {
             ignore_unclean_inbox: false,
