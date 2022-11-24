@@ -6,7 +6,7 @@ services:
     environment:
       - POSTGRESQL_USERNAME=admin
       - POSTGRESQL_PASSWORD=admin123456
-      - POSTGRESQL_DATABASE=drogue
+      - POSTGRESQL_DATABASE=doppelgaenger
     ports:
       - "5432:5432"
     healthcheck:
