@@ -77,7 +77,7 @@ tag-images: require-container-registry
 #
 # Push all tagged images
 #
-.PHONY: tag-images
+.PHONY: push-images
 push-images: require-container-registry
 	set -e; \
 	cd $(TOP_DIR); \
