@@ -2,14 +2,27 @@ use crate::{command::Command, mqtt::MqttClient};
 use async_trait::async_trait;
 use drogue_bazaar::app::{Startup, StartupExt};
 use rumqttc::{AsyncClient, ClientError, Event, EventLoop, Incoming, Outgoing, QoS};
+use std::time::Duration;
 use tracing::instrument;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 pub struct Config {
     #[serde(flatten)]
     pub client: MqttClient,
+
     #[serde(flatten, default)]
     pub mode: Option<Mode>,
+
+    #[serde(with = "humantime_serde", default = "default::initial_reconnect_delay")]
+    pub initial_reconnect_delay: Duration,
+}
+
+mod default {
+    use std::time::Duration;
+
+    pub const fn initial_reconnect_delay() -> Duration {
+        Duration::from_secs(1)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
@@ -60,7 +73,7 @@ impl super::CommandSink for CommandSink {
 
         let (client, event_loop) = AsyncClient::new(opts, 10);
 
-        startup.spawn(Self::runner(event_loop));
+        startup.spawn(Self::runner(event_loop, config.initial_reconnect_delay));
 
         Ok(Self {
             client,
@@ -85,12 +98,13 @@ impl super::CommandSink for CommandSink {
 }
 
 impl CommandSink {
-    async fn runner(mut event_loop: EventLoop) -> anyhow::Result<()> {
+    async fn runner(mut event_loop: EventLoop, reconnect_delay: Duration) -> anyhow::Result<()> {
         loop {
             match event_loop.poll().await {
                 Err(err) => {
                     log::info!("Connection error: {err}");
                     // keep going, as it will re-connect
+                    tokio::time::sleep(reconnect_delay).await;
                 }
                 Ok(Event::Incoming(Incoming::ConnAck(ack))) => {
                     log::info!("Connection opened: {ack:?}");

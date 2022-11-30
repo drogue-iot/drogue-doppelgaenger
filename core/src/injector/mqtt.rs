@@ -12,6 +12,7 @@ use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter_vec, Histogram, IntCounterVec};
 use rumqttc::{AsyncClient, EventLoop, Incoming, Publish, QoS, SubscribeReasonCode};
+use std::time::Duration;
 use tracing::instrument;
 
 lazy_static! {
@@ -31,6 +32,17 @@ pub struct Config {
     pub client: MqttClient,
 
     pub topic: String,
+
+    #[serde(with = "humantime_serde", default = "default::initial_reconnect_delay")]
+    pub initial_reconnect_delay: Duration,
+}
+
+mod default {
+    use std::time::Duration;
+
+    pub const fn initial_reconnect_delay() -> Duration {
+        Duration::from_secs(1)
+    }
 }
 
 impl Config {
@@ -117,6 +129,7 @@ pub struct Injector<T: Target> {
     events: EventLoop,
     target: T,
     topic: String,
+    reconnect_delay: Duration,
 }
 
 macro_rules! close_or_break {
@@ -130,17 +143,16 @@ macro_rules! close_or_break {
 
 impl<T: Target> Injector<T> {
     pub fn new(config: Config, target: T) -> anyhow::Result<Self> {
-        let topic = config.topic;
-
         let opts = config.client.try_into()?;
 
         let (client, events) = AsyncClient::new(opts, 10);
 
         Ok(Self {
-            topic,
+            topic: config.topic,
             client,
             events,
             target,
+            reconnect_delay: config.initial_reconnect_delay,
         })
     }
 
@@ -151,6 +163,7 @@ impl<T: Target> Injector<T> {
                 Err(err) => {
                     log::warn!("MQTT injector error: {err}");
                     // we keep going, polling the loop can fix things
+                    tokio::time::sleep(self.reconnect_delay).await;
                 }
                 Ok(rumqttc::Event::Incoming(Incoming::ConnAck(ack))) => {
                     log::info!("Connection open: {ack:?}");
