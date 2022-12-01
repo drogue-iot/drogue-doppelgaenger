@@ -4,6 +4,7 @@ use rustls::{
     client::{NoClientSessionStorage, ServerCertVerified, ServerCertVerifier},
     Certificate, ClientConfig, Error, ServerName,
 };
+use std::time::Duration;
 use std::{sync::Arc, time::SystemTime};
 use uuid::Uuid;
 
@@ -26,11 +27,20 @@ pub struct MqttClient {
     pub disable_tls: bool,
     #[serde(default)]
     pub insecure: bool,
+
+    #[serde(with = "humantime_serde", default = "default::keepalive")]
+    pub keepalive: Duration,
 }
 
 mod default {
+    use std::time::Duration;
+
     pub const fn clean_session() -> bool {
         true
+    }
+
+    pub const fn keepalive() -> Duration {
+        Duration::from_secs(30)
     }
 }
 
@@ -56,7 +66,8 @@ impl TryFrom<MqttClient> for MqttOptions {
         }
 
         opts.set_manual_acks(true)
-            .set_clean_session(config.clean_session);
+            .set_clean_session(config.clean_session)
+            .set_keep_alive(config.keepalive);
 
         if !config.disable_tls {
             opts.set_transport(Transport::Tls(setup_tls(config.insecure)?));

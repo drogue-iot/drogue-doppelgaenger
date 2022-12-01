@@ -152,8 +152,10 @@ mod test {
                     clean_session: true,
                     disable_tls: false,
                     insecure: false,
+                    keepalive: Duration::from_secs(30)
                 },
                 mode: None,
+                initial_reconnect_delay: Duration::from_secs(1),
             },
             config
         );
@@ -180,8 +182,10 @@ mod test {
                     clean_session: true,
                     disable_tls: false,
                     insecure: false,
+                    keepalive: Duration::from_secs(30)
                 },
-                mode: Some(Mode::Drogue { application: None })
+                mode: Some(Mode::Drogue { application: None }),
+                initial_reconnect_delay: Duration::from_secs(1),
             },
             config
         );
@@ -209,10 +213,12 @@ mod test {
                     clean_session: true,
                     disable_tls: false,
                     insecure: false,
+                    keepalive: Duration::from_secs(30)
                 },
                 mode: Some(Mode::Drogue {
                     application: Some("app".to_string())
-                })
+                }),
+                initial_reconnect_delay: Duration::from_secs(1),
             },
             config
         );
