@@ -476,6 +476,29 @@ impl InfallibleUpdater for IndexMap<String, Deleting> {
     }
 }
 
+/// Remove a state property.
+///
+/// Remove the provided state from the designed state type.
+pub struct StateRemover(pub String, pub StateType);
+
+impl InfallibleUpdater for StateRemover {
+    fn update(&self, mut thing: Thing<Internal>) -> Thing<Internal> {
+        match self.1 {
+            StateType::Reported => {
+                thing.reported_state.remove(&self.0);
+            }
+            StateType::Synthetic => {
+                thing.synthetic_state.remove(&self.0);
+            }
+            StateType::Desired => {
+                thing.desired_state.remove(&self.0);
+            }
+        }
+
+        thing
+    }
+}
+
 #[cfg(test)]
 mod test {
 

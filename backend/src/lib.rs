@@ -163,9 +163,19 @@ pub async fn configure<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
                     ),
                 )
                 .service(
-                    web::resource("/{application}/things/{thing}/syntheticStates/{name}").route(
-                        web::put().to(endpoints::things_update_synthetic_state::<S, N, Si, Cmd>),
-                    ),
+                    web::resource("/{application}/things/{thing}/syntheticStates/{name}")
+                        .route(web::put().to(endpoints::things_update_synthetic_state::<
+                            S,
+                            N,
+                            Si,
+                            Cmd,
+                        >))
+                        .route(web::delete().to(endpoints::things_delete_synthetic_state::<
+                            S,
+                            N,
+                            Si,
+                            Cmd,
+                        >)),
                 )
                 .service(
                     web::resource("/{application}/things/{thing}/desiredStates/{name}").route(

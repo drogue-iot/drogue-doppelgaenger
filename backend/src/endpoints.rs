@@ -15,7 +15,8 @@ use drogue_doppelgaenger_core::{
     service::{
         AnnotationsUpdater, DefaultService, DesiredStateUpdate, DesiredStateUpdater,
         DesiredStateValueUpdater, Id, JsonMergeUpdater, JsonPatchUpdater, Patch,
-        ReportedStateUpdater, Service, SyntheticStateUpdater, UpdateMode, UpdateOptions,
+        ReportedStateUpdater, Service, StateRemover, StateType, SyntheticStateUpdater, UpdateMode,
+        UpdateOptions,
     },
     storage::Storage,
 };
@@ -121,6 +122,23 @@ pub async fn things_update_synthetic_state<S: Storage, N: Notifier, Si: Sink, Cm
         .update(
             &Id::new(application, thing),
             &SyntheticStateUpdater(state, payload),
+            &OPTS,
+        )
+        .await?;
+
+    Ok(HttpResponse::NoContent().json(json!({})))
+}
+
+pub async fn things_delete_synthetic_state<S: Storage, N: Notifier, Si: Sink, Cmd: CommandSink>(
+    service: web::Data<DefaultService<S, N, Si, Cmd>>,
+    path: web::Path<(String, String, String)>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let (application, thing, state) = path.into_inner();
+
+    service
+        .update(
+            &Id::new(application, thing),
+            &StateRemover(state, StateType::Synthetic),
             &OPTS,
         )
         .await?;
