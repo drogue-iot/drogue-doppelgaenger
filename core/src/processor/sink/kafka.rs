@@ -57,10 +57,10 @@ impl super::Sink for Sink {
     }
 
     #[instrument(skip_all, fields(
-        id=event.id,
-        timestamp=%event.timestamp,
-        application=event.application,
-        thing=event.thing
+        id = event.id,
+        timestamp = %event.timestamp,
+        application = event.application,
+        thing = event.thing
     ), err)]
     async fn publish(&self, event: Event) -> anyhow::Result<()> {
         let key = format!("{}/{}", event.application, event.thing);

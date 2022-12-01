@@ -28,9 +28,9 @@ pub struct Source {
 
 impl Source {
     #[instrument(skip_all, fields(
-        id=event.id,
-        application=event.application,
-        thing=event.thing,
+        id = event.id,
+        application = event.application,
+        thing = event.thing,
     ))]
     async fn process<F, Fut>(f: &F, event: Event) -> anyhow::Result<()>
     where

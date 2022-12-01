@@ -236,7 +236,7 @@ where
     ///
     /// NOTE: This function respects a change in the `deletion_timestamp` and will trigger a
     /// deletion if the updater sets it.
-    #[instrument(skip_all, fields(id), err)]
+    #[instrument(skip_all, fields(id = %id), err)]
     async fn run_cleanup<U>(
         service: &DefaultService<St, No, Si, Cmd>,
         id: &Id,
@@ -298,7 +298,7 @@ where
     }
 
     /// Either update or insert a new thing
-    #[instrument(skip_all, fields(id), err)]
+    #[instrument(skip_all, fields(id = %id), err)]
     async fn run_upsert<U>(
         service: &DefaultService<St, No, Si, Cmd>,
         id: &Id,
@@ -356,7 +356,7 @@ where
         Ok(())
     }
 
-    #[instrument(skip_all, fields(id), err)]
+    #[instrument(skip_all, fields(id = %id), err)]
     async fn run_update<U>(
         service: &DefaultService<St, No, Si, Cmd>,
         id: &Id,

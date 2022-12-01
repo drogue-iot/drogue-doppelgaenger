@@ -159,6 +159,12 @@ impl InfallibleUpdater for Cleanup {
     }
 }
 
+pub enum StateType {
+    Reported,
+    Synthetic,
+    Desired,
+}
+
 pub struct MapValueRemover(pub String, pub String);
 
 impl InfallibleUpdater for MapValueRemover {
@@ -181,6 +187,7 @@ impl InfallibleUpdater for MapValueRemover {
     }
 }
 
+/// process a reported state update
 pub struct ReportedStateUpdater(pub BTreeMap<String, Value>, pub UpdateMode);
 
 impl InfallibleUpdater for ReportedStateUpdater {

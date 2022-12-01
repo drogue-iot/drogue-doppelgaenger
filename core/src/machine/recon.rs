@@ -427,7 +427,7 @@ impl Reconciler {
         Ok(())
     }
 
-    #[instrument(skip_all, fields(name, action), err)]
+    #[instrument(skip(self, code), err)]
     async fn run_code(
         &mut self,
         name: String,
@@ -502,7 +502,7 @@ impl Reconciler {
         }
     }
 
-    #[instrument(skip_all, fields(name), err)]
+    #[instrument(skip(r#type, new_state), ret, err)]
     async fn run_synthetic(
         name: &str,
         r#type: &SyntheticType,

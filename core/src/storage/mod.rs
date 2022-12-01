@@ -114,6 +114,7 @@ pub trait Storage: Sized + Send + Sync + 'static {
     }
 
     /// Delete a thing. Return `true` if the thing was deleted, `false` if it didn't exist.
+    #[instrument(skip(self), err, ret)]
     async fn delete(&self, application: &str, name: &str) -> Result<bool, Error<Self::Error>> {
         self.delete_with(application, name, Default::default())
             .await

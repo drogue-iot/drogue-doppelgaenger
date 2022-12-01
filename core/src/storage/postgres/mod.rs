@@ -205,7 +205,10 @@ WHERE
         }
     }
 
-    #[instrument(skip_all, err)]
+    #[instrument(skip_all, fields(
+        name = thing.metadata.name,
+        application = thing.metadata.application
+    ), err)]
     async fn create(&self, mut thing: Thing<Internal>) -> Result<Thing<Internal>> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotAllowed)?;
 
@@ -300,7 +303,10 @@ INSERT INTO things (
         Ok(thing.clone())
     }
 
-    #[instrument(skip_all, err)]
+    #[instrument(skip_all, fields(
+        name = thing.metadata.name,
+        application = thing.metadata.application
+    ), err)]
     async fn update(&self, mut thing: Thing<Internal>) -> Result<Thing<Internal>> {
         self.ensure_app(&thing.metadata.application, || storage::Error::NotFound)?;
 
